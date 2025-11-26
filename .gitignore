@@ -1,0 +1,48 @@
+# Build directories
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+
+# Compiled files
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Testing
+Testing/
+tests/test_results/
+*.gcov
+*.gcda
+*.gcno
+
+# Documentation
+docs/html/
+docs/latex/
+docs/_build/
+
+# Cache data
+*.cache
+cache_test/
