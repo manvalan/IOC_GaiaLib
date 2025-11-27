@@ -15,12 +15,15 @@ option(BUILD_DOCS "Build documentation" OFF)
 find_package(CURL REQUIRED)
 find_package(LibXml2 REQUIRED)
 find_package(Threads REQUIRED)
+find_package(ZLIB REQUIRED)
 
 # Library sources
 set(GAIALIB_SOURCES
     src/types.cpp
     src/gaia_cache.cpp
     src/gaia_client.cpp
+    src/catalog_compiler.cpp
+    src/grappa_reader.cpp
 )
 
 # Create library
@@ -33,6 +36,7 @@ target_include_directories(ioc_gaialib
     PRIVATE
         ${CURL_INCLUDE_DIRS}
         ${LIBXML2_INCLUDE_DIR}
+        ${ZLIB_INCLUDE_DIRS}
 )
 
 target_link_libraries(ioc_gaialib
@@ -40,6 +44,7 @@ target_link_libraries(ioc_gaialib
         ${CURL_LIBRARIES}
         ${LIBXML2_LIBRARIES}
         Threads::Threads
+        ZLIB::ZLIB
 )
 
 # Compiler warnings
