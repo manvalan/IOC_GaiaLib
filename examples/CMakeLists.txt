@@ -49,6 +49,9 @@ target_link_libraries(analyze_mag18 PRIVATE ioc_gaialib)
 add_executable(build_mag18_catalog_v2 build_mag18_catalog_v2.cpp)
 target_link_libraries(build_mag18_catalog_v2 PRIVATE ioc_gaialib)
 
+add_executable(test_grappa_load test_grappa_load.cpp)
+target_link_libraries(test_grappa_load PRIVATE ioc_gaialib)
+
 add_executable(test_mag18_catalog_v2 test_mag18_catalog_v2.cpp)
 target_link_libraries(test_mag18_catalog_v2 PRIVATE ioc_gaialib)
 

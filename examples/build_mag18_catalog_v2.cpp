@@ -46,14 +46,15 @@ void printProgress(size_t current, size_t total, const std::string& phase) {
 
 uint32_t computeHEALPixPixel(double ra, double dec, uint32_t nside) {
     // Convert RA/Dec to HEALPix pixel (NSIDE=64, NESTED)
+    // IMPORTANT: Must match Mag18CatalogV2::ang2pix_nest() exactly!
     const double DEG2RAD = 3.14159265358979323846 / 180.0;
     const double PI = 3.14159265358979323846;
     const double TWOPI = 2.0 * PI;
+    const double HALFPI = PI / 2.0;
     
     double theta = (90.0 - dec) * DEG2RAD;  // Colatitude
     double phi = ra * DEG2RAD;               // Longitude
     
-    // Simplified ang2pix_nest
     const uint32_t nl2 = 2 * nside;
     const uint32_t nl4 = 4 * nside;
     const double z = cos(theta);
@@ -68,11 +69,30 @@ uint32_t computeHEALPixPixel(double ra, double dec, uint32_t nside) {
         const uint32_t ir = nside + 1 + jp - jm;
         const uint32_t kshift = 1 - (ir & 1);
         const uint32_t ip = (jp + jm - nside + kshift + 1) / 2;
-        return (ir - nside) * nside + ip;
+        
+        const uint32_t face_num = ((jp < nside) ? 0 : 
+                                   (jm < nside) ? 2 : 
+                                   (jp >= nl2) ? 4 : 
+                                   (jm >= nl2) ? 6 : 8) + (ir - nside);
+        
+        return face_num * nside * nside + (ip * nside + (ir - nside + 1));
     }
     
-    // Polar caps - simplified
-    return static_cast<uint32_t>(phi / TWOPI * 4 * nside);
+    // Polar caps
+    const uint32_t ntt = static_cast<uint32_t>(phi * 4.0 / TWOPI);
+    const double tp = phi - ntt * TWOPI / 4.0;
+    const double tmp = sqrt(3.0 * (1.0 - za));
+    const uint32_t jp = static_cast<uint32_t>(nside * tp / HALFPI * tmp);
+    const uint32_t jm = static_cast<uint32_t>(nside * (1.0 - tp / HALFPI) * tmp);
+    const uint32_t ir = jp + jm + 1;
+    const uint32_t ip = ntt + 1;
+    
+    if (z > 0) {
+        return 2 * ir * (ir - 1) + ip - 1;
+    } else {
+        const uint32_t npix = 12 * nside * nside;
+        return npix - 2 * ir * (ir + 1) + ip - 1;
+    }
 }
 
 int main(int argc, char** argv) {
@@ -98,47 +118,67 @@ int main(int argc, char** argv) {
     std::cout << "🚀 Building Gaia Mag18 V2 Catalog with HEALPix Index\n";
     std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
     
-    // Phase 1: Load GRAPPA3E catalog
-    std::cout << "📖 Phase 1: Loading GRAPPA3E catalog...\n";
-    ioc_gaialib::GaiaLocalCatalog grappa(grappa_path);
-    if (!grappa.isLoaded()) {
-        std::cerr << "❌ Failed to load GRAPPA3E catalog\n";
-        return 1;
-    }
-    auto stats = grappa.getStatistics();
-    std::cout << "✅ GRAPPA3E loaded: " << stats.total_sources << " sources from " 
-              << stats.tiles_loaded << " tiles\n\n";
-    
-    // Phase 2: Collect all stars with mag <= 18 (scan full sky)
-    std::cout << "⭐ Phase 2: Scanning full sky for stars with G ≤ 18...\n";
-    std::string temp_file = output_path + ".temp";
-    std::ofstream temp_out(temp_file, std::ios::binary);
-    if (!temp_out) {
-        std::cerr << "❌ Failed to create temp file: " << temp_file << "\n";
-        return 1;
-    }
-    
     const double MAG_LIMIT = 18.0;
     const uint32_t HEALPIX_NSIDE = 64;
+    std::string temp_file = output_path + ".temp";
     uint64_t star_count = 0;
     
-    // Scan full sky in 10° × 10° patches
-    const int RA_STEPS = 36;   // 360° / 10° = 36
-    const int DEC_STEPS = 18;  // 180° / 10° = 18
+    // Check if temp file already exists (resume from Phase 3)
+    std::ifstream temp_check(temp_file, std::ios::binary | std::ios::ate);
+    bool resume_from_temp = false;
+    if (temp_check) {
+        size_t temp_size = temp_check.tellg();
+        temp_check.close();
+        star_count = temp_size / sizeof(Mag18RecordV2);
+        if (star_count > 0) {
+            std::cout << "♻️  Found existing temp file with " << star_count << " stars\n";
+            std::cout << "   Skipping Phase 1 & 2, resuming from Phase 3...\n\n";
+            resume_from_temp = true;
+        }
+    }
+    
+    if (!resume_from_temp) {
+        // Phase 1: Load GRAPPA3E catalog
+        std::cout << "📖 Phase 1: Loading GRAPPA3E catalog...\n";
+        ioc_gaialib::GaiaLocalCatalog grappa(grappa_path);
+        if (!grappa.isLoaded()) {
+            std::cerr << "❌ Failed to load GRAPPA3E catalog\n";
+            return 1;
+        }
+        auto stats = grappa.getStatistics();
+        std::cout << "✅ GRAPPA3E loaded: " << stats.total_sources << " sources from " 
+                  << stats.tiles_loaded << " tiles\n\n";
+        
+        // Phase 2: Collect all stars with mag <= 18 (scan full sky)
+        std::cout << "⭐ Phase 2: Scanning full sky for stars with G ≤ 18...\n";
+        std::ofstream temp_out(temp_file, std::ios::binary);
+        if (!temp_out) {
+            std::cerr << "❌ Failed to create temp file: " << temp_file << "\n";
+            return 1;
+        }
+        
+        star_count = 0;
+        uint64_t duplicate_count = 0;
+    
+    // Scan full sky in smaller 2° × 2° patches to reduce memory usage
+    // Note: Patches overlap, so we'll have duplicates - removed in Phase 3
+    const int RA_STEPS = 180;  // 360° / 2° = 180
+    const int DEC_STEPS = 90;  // 180° / 2° = 90
     int total_patches = RA_STEPS * DEC_STEPS;
     int patch_count = 0;
     
     for (int ra_idx = 0; ra_idx < RA_STEPS; ++ra_idx) {
-        double ra_center = ra_idx * 10.0 + 5.0;  // Center of patch
+        double ra_center = ra_idx * 2.0 + 1.0;  // Center of 2° patch
         
         for (int dec_idx = 0; dec_idx < DEC_STEPS; ++dec_idx) {
-            double dec_center = dec_idx * 10.0 - 85.0;  // -85° to +85°
+            double dec_center = dec_idx * 2.0 - 89.0;  // -89° to +89°
             
-            // Query 10° box using cone search (radius ~7° covers 10° box)
+            // Query 2° box using cone search (radius ~1.5° covers 2° box)
+            // CRITICAL: Limit to 100k stars per query to prevent OOM
             auto stars = grappa.queryConeWithMagnitude(
-                ra_center, dec_center, 7.1,  // Slightly larger to ensure coverage
+                ra_center, dec_center, 1.5,  // Smaller radius for memory efficiency
                 -5.0, MAG_LIMIT,              // Magnitude range
-                0                             // No limit on results
+                100000                        // LIMIT: max 100k stars per query
             );
             
             for (const auto& star : stars) {
@@ -171,7 +211,7 @@ int main(int argc, char** argv) {
             }
             
             patch_count++;
-            if (patch_count % 10 == 0) {
+            if (patch_count % 100 == 0) {  // Update every 100 patches (more frequent for smaller patches)
                 printProgress(patch_count, total_patches, "Scanning sky patches");
             }
         }
@@ -179,6 +219,8 @@ int main(int argc, char** argv) {
     temp_out.close();
     printProgress(total_patches, total_patches, "Scanning sky patches");
     std::cout << "\n✅ Found " << star_count << " stars with G ≤ " << MAG_LIMIT << "\n\n";
+    
+    } // End of !resume_from_temp
     
     if (star_count == 0) {
         std::cerr << "❌ No stars found!\n";
@@ -203,34 +245,38 @@ int main(int argc, char** argv) {
         [](const Mag18RecordV2& a, const Mag18RecordV2& b) {
             return a.source_id < b.source_id;
         });
-    std::cout << "✅ Sorted\n\n";
+    std::cout << "✅ Sorted\n";
+    
+    // Remove duplicates (overlapping patches)
+    std::cout << "🔄 Removing duplicates...\n";
+    auto last = std::unique(stars.begin(), stars.end(),
+        [](const Mag18RecordV2& a, const Mag18RecordV2& b) {
+            return a.source_id == b.source_id;
+        });
+    size_t duplicates = std::distance(last, stars.end());
+    stars.erase(last, stars.end());
+    std::cout << "✅ Removed " << duplicates << " duplicates, " << stars.size() << " unique stars remain\n\n";
     
     // Phase 4: Build HEALPix index
     std::cout << "🗺️  Phase 4: Building HEALPix spatial index...\n";
     
-    // Sort by HEALPix pixel for spatial locality
-    std::vector<size_t> indices(stars.size());
-    for (size_t i = 0; i < indices.size(); ++i) indices[i] = i;
-    
-    std::sort(indices.begin(), indices.end(), 
-        [&stars](size_t a, size_t b) {
-            return stars[a].healpix_pixel < stars[b].healpix_pixel;
+    // Sort stars by HEALPix pixel (IN-PLACE to save memory)
+    std::cout << "🔄 Sorting by HEALPix pixel...\n";
+    std::sort(stars.begin(), stars.end(),
+        [](const Mag18RecordV2& a, const Mag18RecordV2& b) {
+            return a.healpix_pixel < b.healpix_pixel;
         });
-    
-    // Rearrange stars by pixel
-    std::vector<Mag18RecordV2> stars_by_pixel(stars.size());
-    for (size_t i = 0; i < indices.size(); ++i) {
-        stars_by_pixel[i] = stars[indices[i]];
-    }
+    std::cout << "✅ Sorted by HEALPix\n";
     
     // Build pixel index
+    std::cout << "🔄 Building pixel index...\n";
     std::vector<HEALPixIndexEntry> healpix_index;
-    uint32_t current_pixel = stars_by_pixel[0].healpix_pixel;
+    uint32_t current_pixel = stars[0].healpix_pixel;
     uint64_t pixel_start = 0;
     uint32_t pixel_count = 0;
     
-    for (size_t i = 0; i < stars_by_pixel.size(); ++i) {
-        if (stars_by_pixel[i].healpix_pixel != current_pixel) {
+    for (size_t i = 0; i < stars.size(); ++i) {
+        if (stars[i].healpix_pixel != current_pixel) {
             HEALPixIndexEntry entry;
             entry.pixel_id = current_pixel;
             entry.first_star_idx = pixel_start;
@@ -238,7 +284,7 @@ int main(int argc, char** argv) {
             entry.reserved = 0;
             healpix_index.push_back(entry);
             
-            current_pixel = stars_by_pixel[i].healpix_pixel;
+            current_pixel = stars[i].healpix_pixel;
             pixel_start = i;
             pixel_count = 1;
         } else {
