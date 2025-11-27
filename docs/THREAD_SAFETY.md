@@ -2,7 +2,14 @@
 
 ## Overview
 
-The Mag18 V2 catalog reader is **fully thread-safe** and supports **parallel query processing** to maximize performance on multi-core systems.
+The Mag18 V2 catalog reader is **fully thread-safe** and supports **parallel query processing** using **OpenMP** to maximize performance on multi-core systems.
+
+### Why OpenMP?
+- **Lower overhead** than `std::async` and manual thread management
+- **Automatic load balancing** with dynamic scheduling
+- **Industry standard** for scientific computing parallelization
+- **Simple pragmas** (`#pragma omp`) for clean, maintainable code
+- **Compiler-optimized** parallel loops
 
 ## Thread-Safety Features
 
@@ -36,14 +43,22 @@ All file operations are serialized to protect the non-thread-safe `FILE*` handle
 ```cpp
 Mag18CatalogV2 catalog("gaia_mag18_v2.mag18v2");
 
-// Enable parallelization with 8 threads
+// Enable parallelization with 8 threads (sets OMP_NUM_THREADS)
 catalog.setParallelProcessing(true, 8);
 
-// Auto-detect hardware threads (default)
-catalog.setParallelProcessing(true);  // Uses std::thread::hardware_concurrency()
+// Auto-detect hardware threads (default, uses omp_get_max_threads())
+catalog.setParallelProcessing(true);
 
 // Disable parallelization (sequential processing)
 catalog.setParallelProcessing(false);
+```
+
+### Environment Variables
+You can also control OpenMP behavior via environment variables:
+```bash
+export OMP_NUM_THREADS=4         # Set thread count
+export OMP_SCHEDULE="dynamic"    # Load balancing strategy
+export OMP_PROC_BIND=true        # Pin threads to cores
 ```
 
 ### Query Parallel Processing Status
@@ -172,7 +187,7 @@ Avg time/query: 15.6 ms
 
 ## Implementation Details
 
-### Parallel Cone Search Algorithm
+### Parallel Cone Search with OpenMP
 
 ```cpp
 std::vector<GaiaStar> Mag18CatalogV2::queryCone(double ra, double dec, double radius) {
@@ -182,40 +197,54 @@ std::vector<GaiaStar> Mag18CatalogV2::queryCone(double ra, double dec, double ra
         return sequentialQuery(pixels);  // Small query
     }
     
-    // PARALLEL PROCESSING
-    size_t pixels_per_thread = pixels.size() / num_threads_;
-    std::vector<std::future<void>> futures;
-    std::mutex results_mutex;
+    // PARALLEL PROCESSING with OpenMP
     std::vector<GaiaStar> results;
+    std::atomic<bool> limit_reached(false);
     
-    // Launch threads
-    for (size_t t = 0; t < num_threads_; ++t) {
-        futures.push_back(std::async(std::launch::async, [&, t]() {
-            // Process subset of pixels
-            std::vector<GaiaStar> thread_results;
-            for (size_t p = start; p < end; ++p) {
-                auto stars = queryPixel(pixels[p]);
-                thread_results.insert(..., stars.begin(), stars.end());
-            }
+    #pragma omp parallel if(enable_parallel_)
+    {
+        std::vector<GaiaStar> thread_results;
+        
+        // Parallel loop with dynamic scheduling (automatic load balancing)
+        #pragma omp for schedule(dynamic)
+        for (size_t p = 0; p < pixels.size(); ++p) {
+            if (limit_reached.load()) continue;
             
-            // Merge results (lock-protected)
-            std::lock_guard<std::mutex> lock(results_mutex);
+            // Process pixel
+            uint32_t pixel = pixels[p];
+            auto stars = queryPixel(pixel, ra, dec, radius);
+            thread_results.insert(..., stars.begin(), stars.end());
+        }
+        
+        // Merge results (critical section - only one thread at a time)
+        #pragma omp critical
+        {
             results.insert(..., thread_results.begin(), thread_results.end());
-        }));
+            if (max_results > 0 && results.size() >= max_results) {
+                limit_reached.store(true);
+            }
+        }
     }
     
-    // Wait for all threads
-    for (auto& f : futures) f.get();
     return results;
 }
 ```
 
+### OpenMP Advantages
+- **`#pragma omp for schedule(dynamic)`**: Automatic work distribution across threads
+- **`#pragma omp critical`**: Built-in synchronization (no manual mutex management)
+- **`#pragma omp parallel if(...)`**: Runtime conditional parallelization
+- **Thread-local buffers**: Each thread accumulates results independently
+- **Implicit barrier**: OpenMP waits for all threads automatically
+
 ### Key Design Decisions
 
-1. **No global locks**: Each query independently acquires locks only when needed
-2. **Thread-local buffers**: Results accumulated per-thread, then merged
-3. **Early termination**: `std::atomic<bool>` flag for `max_results` limit
-4. **Adaptive strategy**: Small queries avoid threading overhead
+1. **OpenMP parallelization**: Industry-standard, compiler-optimized parallel loops
+2. **Dynamic scheduling**: Automatic load balancing across uneven pixel sizes
+3. **Thread-local buffers**: Results accumulated per-thread, then merged
+4. **`#pragma omp critical`**: Built-in synchronization for result merging
+5. **Early termination**: `std::atomic<bool>` flag for `max_results` limit
+6. **Adaptive strategy**: Small queries avoid threading overhead with `if(enable_parallel_)`
 
 ## Best Practices
 

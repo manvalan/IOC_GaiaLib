@@ -4,6 +4,7 @@
 #include <cstring>
 #include <ctime>
 #include <iostream>
+#include <omp.h>
 
 namespace ioc {
 namespace gaia {
@@ -18,7 +19,7 @@ static constexpr double RAD2DEG = 180.0 / PI;
 Mag18CatalogV2::Mag18CatalogV2() 
     : file_(nullptr), 
       enable_parallel_(true),
-      num_threads_(std::thread::hardware_concurrency()) {
+      num_threads_(omp_get_max_threads()) {
     chunk_cache_.reserve(MAX_CACHED_CHUNKS);
     if (num_threads_ == 0) num_threads_ = 4;  // Fallback
 }
@@ -38,8 +39,9 @@ void Mag18CatalogV2::setParallelProcessing(bool enable, size_t num_threads) {
     enable_parallel_.store(enable);
     if (num_threads > 0) {
         num_threads_ = num_threads;
+        omp_set_num_threads(num_threads);
     } else {
-        num_threads_ = std::thread::hardware_concurrency();
+        num_threads_ = omp_get_max_threads();
         if (num_threads_ == 0) num_threads_ = 4;
     }
 }
@@ -418,62 +420,56 @@ std::vector<GaiaStar> Mag18CatalogV2::queryCone(double ra, double dec, double ra
         return results;
     }
     
-    // PARALLEL PROCESSING for multiple pixels
+    // PARALLEL PROCESSING with OpenMP
     std::vector<GaiaStar> results;
     std::mutex results_mutex;
     std::atomic<bool> limit_reached(false);
     
-    // Split pixels into batches for threads
-    size_t pixels_per_thread = (pixels.size() + num_threads_ - 1) / num_threads_;
-    std::vector<std::future<void>> futures;
-    
-    for (size_t t = 0; t < num_threads_ && t * pixels_per_thread < pixels.size(); ++t) {
-        size_t start_idx = t * pixels_per_thread;
-        size_t end_idx = std::min(start_idx + pixels_per_thread, pixels.size());
+    #pragma omp parallel if(enable_parallel_.load())
+    {
+        std::vector<GaiaStar> thread_results;
         
-        futures.push_back(std::async(std::launch::async, [&, start_idx, end_idx]() {
-            std::vector<GaiaStar> thread_results;
+        #pragma omp for schedule(dynamic)
+        for (size_t p = 0; p < pixels.size(); ++p) {
+            if (limit_reached.load()) continue;
             
-            for (size_t p = start_idx; p < end_idx && !limit_reached.load(); ++p) {
-                uint32_t pixel = pixels[p];
-                
-                // Find pixel in index
-                auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
-                    [](const HEALPixIndexEntry& entry, uint32_t pix) {
-                        return entry.pixel_id < pix;
-                    });
-                
-                if (it == healpix_index_.end() || it->pixel_id != pixel) {
-                    continue;
-                }
-                
-                // Scan all stars in pixel
-                for (uint32_t i = 0; i < it->num_stars && !limit_reached.load(); ++i) {
-                    auto record = readRecord(it->first_star_idx + i);
-                    if (!record) continue;
-                    
-                    double dist = angularDistance(ra, dec, record->ra, record->dec);
-                    if (dist <= radius) {
-                        thread_results.push_back(recordToStar(*record));
-                    }
-                }
+            uint32_t pixel = pixels[p];
+            
+            // Find pixel in index
+            auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
+                [](const HEALPixIndexEntry& entry, uint32_t pix) {
+                    return entry.pixel_id < pix;
+                });
+            
+            if (it == healpix_index_.end() || it->pixel_id != pixel) {
+                continue;
             }
             
-            // Merge thread results
-            if (!thread_results.empty()) {
-                std::lock_guard<std::mutex> lock(results_mutex);
+            // Scan all stars in pixel
+            for (uint32_t i = 0; i < it->num_stars; ++i) {
+                if (limit_reached.load()) break;
+                
+                auto record = readRecord(it->first_star_idx + i);
+                if (!record) continue;
+                
+                double dist = angularDistance(ra, dec, record->ra, record->dec);
+                if (dist <= radius) {
+                    thread_results.push_back(recordToStar(*record));
+                }
+            }
+        }
+        
+        // Merge thread results (critical section)
+        if (!thread_results.empty()) {
+            #pragma omp critical
+            {
                 results.insert(results.end(), thread_results.begin(), thread_results.end());
                 
                 if (max_results > 0 && results.size() >= max_results) {
                     limit_reached.store(true);
                 }
             }
-        }));
-    }
-    
-    // Wait for all threads
-    for (auto& future : futures) {
-        future.get();
+        }
     }
     
     // Truncate if needed
@@ -520,57 +516,53 @@ std::vector<GaiaStar> Mag18CatalogV2::queryConeWithMagnitude(double ra, double d
         return results;
     }
     
-    // PARALLEL PROCESSING
+    // PARALLEL PROCESSING with OpenMP
     std::vector<GaiaStar> results;
-    std::mutex results_mutex;
     std::atomic<bool> limit_reached(false);
     
-    size_t pixels_per_thread = (pixels.size() + num_threads_ - 1) / num_threads_;
-    std::vector<std::future<void>> futures;
-    
-    for (size_t t = 0; t < num_threads_ && t * pixels_per_thread < pixels.size(); ++t) {
-        size_t start_idx = t * pixels_per_thread;
-        size_t end_idx = std::min(start_idx + pixels_per_thread, pixels.size());
+    #pragma omp parallel if(enable_parallel_.load())
+    {
+        std::vector<GaiaStar> thread_results;
         
-        futures.push_back(std::async(std::launch::async, [&, start_idx, end_idx]() {
-            std::vector<GaiaStar> thread_results;
+        #pragma omp for schedule(dynamic)
+        for (size_t p = 0; p < pixels.size(); ++p) {
+            if (limit_reached.load()) continue;
             
-            for (size_t p = start_idx; p < end_idx && !limit_reached.load(); ++p) {
-                uint32_t pixel = pixels[p];
+            uint32_t pixel = pixels[p];
+            
+            auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
+                [](const HEALPixIndexEntry& entry, uint32_t pix) {
+                    return entry.pixel_id < pix;
+                });
+            
+            if (it == healpix_index_.end() || it->pixel_id != pixel) continue;
+            
+            for (uint32_t i = 0; i < it->num_stars; ++i) {
+                if (limit_reached.load()) break;
                 
-                auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
-                    [](const HEALPixIndexEntry& entry, uint32_t pix) {
-                        return entry.pixel_id < pix;
-                    });
+                auto record = readRecord(it->first_star_idx + i);
+                if (!record) continue;
                 
-                if (it == healpix_index_.end() || it->pixel_id != pixel) continue;
+                if (record->g_mag < mag_min || record->g_mag > mag_max) continue;
                 
-                for (uint32_t i = 0; i < it->num_stars && !limit_reached.load(); ++i) {
-                    auto record = readRecord(it->first_star_idx + i);
-                    if (!record) continue;
-                    
-                    if (record->g_mag < mag_min || record->g_mag > mag_max) continue;
-                    
-                    double dist = angularDistance(ra, dec, record->ra, record->dec);
-                    if (dist <= radius) {
-                        thread_results.push_back(recordToStar(*record));
-                    }
+                double dist = angularDistance(ra, dec, record->ra, record->dec);
+                if (dist <= radius) {
+                    thread_results.push_back(recordToStar(*record));
                 }
             }
-            
-            if (!thread_results.empty()) {
-                std::lock_guard<std::mutex> lock(results_mutex);
+        }
+        
+        // Merge results (critical section)
+        if (!thread_results.empty()) {
+            #pragma omp critical
+            {
                 results.insert(results.end(), thread_results.begin(), thread_results.end());
                 
                 if (max_results > 0 && results.size() >= max_results) {
                     limit_reached.store(true);
                 }
             }
-        }));
-    }
-    
-    for (auto& future : futures) {
-        future.get();
+        }
     }
     
     if (max_results > 0 && results.size() > max_results) {

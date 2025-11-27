@@ -17,6 +17,28 @@ find_package(LibXml2 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
 
+# Find OpenMP (special handling for macOS with Homebrew libomp)
+if(APPLE)
+    # Try to find libomp from Homebrew
+    execute_process(
+        COMMAND brew --prefix libomp
+        OUTPUT_VARIABLE LIBOMP_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(LIBOMP_PREFIX)
+        set(OpenMP_C_FLAGS "-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include")
+        set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include")
+        set(OpenMP_C_LIB_NAMES "omp")
+        set(OpenMP_CXX_LIB_NAMES "omp")
+        set(OpenMP_omp_LIBRARY "${LIBOMP_PREFIX}/lib/libomp.dylib")
+        set(OpenMP_CXX_FLAGS "${OpenMP_CXX_FLAGS}" CACHE STRING "" FORCE)
+        set(OpenMP_C_FLAGS "${OpenMP_C_FLAGS}" CACHE STRING "" FORCE)
+    endif()
+endif()
+
+find_package(OpenMP REQUIRED)
+
 # Library sources
 set(GAIALIB_SOURCES
     src/types.cpp
@@ -49,6 +71,7 @@ target_link_libraries(ioc_gaialib
         ${LIBXML2_LIBRARIES}
         Threads::Threads
         ZLIB::ZLIB
+        OpenMP::OpenMP_CXX
 )
 
 # Compiler warnings

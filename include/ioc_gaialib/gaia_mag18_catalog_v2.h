@@ -10,8 +10,6 @@
 #include <mutex>
 #include <shared_mutex>
 #include <atomic>
-#include <thread>
-#include <future>
 
 namespace ioc {
 namespace gaia {
