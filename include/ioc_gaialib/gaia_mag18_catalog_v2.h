@@ -7,6 +7,11 @@
 #include <memory>
 #include <zlib.h>
 #include <cstdint>
+#include <mutex>
+#include <shared_mutex>
+#include <atomic>
+#include <thread>
+#include <future>
 
 namespace ioc {
 namespace gaia {
@@ -128,6 +133,7 @@ struct Mag18CatalogHeaderV2 {
 class Mag18CatalogV2 {
 public:
     Mag18CatalogV2();
+    explicit Mag18CatalogV2(const std::string& catalog_path);
     ~Mag18CatalogV2();
     
     /**
@@ -193,29 +199,76 @@ public:
     std::vector<uint32_t> getPixelsInCone(double ra, double dec, double radius) const;
     
     /**
-     * @brief Get extended star information (V2 format)
+     * Get extended star information (V2 format)
      */
     std::optional<Mag18RecordV2> getExtendedRecord(uint64_t source_id);
+    
+    /**
+     * @brief Enable/disable parallel processing
+     * @param enable True to enable parallel queries
+     * @param num_threads Number of threads (0 = auto-detect)
+     */
+    void setParallelProcessing(bool enable, size_t num_threads = 0);
+    
+    /**
+     * @brief Check if parallel processing is enabled
+     */
+    bool isParallelEnabled() const { return enable_parallel_.load(); }
+    
+    /**
+     * @brief Get number of threads used for parallel processing
+     */
+    size_t getNumThreads() const { return num_threads_; }
     
 private:
     std::string catalog_path_;
     FILE* file_;
+    mutable std::mutex file_mutex_;  // Protects file operations
     Mag18CatalogHeaderV2 header_;
     
-    // HEALPix spatial index (loaded in memory for fast queries)
+    // HEALPix spatial index (loaded in memory for fast queries) - READ ONLY after load
     std::vector<HEALPixIndexEntry> healpix_index_;
     
-    // Chunk index (loaded in memory)
+    // Chunk index (loaded in memory) - READ ONLY after load
     std::vector<ChunkInfo> chunk_index_;
     
-    // Chunk cache (LRU, keep last N decompressed chunks)
+    // Parallelization settings
+    std::atomic<bool> enable_parallel_;
+    size_t num_threads_;
+    
+    // Chunk cache (LRU, keep last N decompressed chunks) - THREAD SAFE
     struct ChunkCache {
         uint64_t chunk_id;
         std::vector<Mag18RecordV2> records;
-        size_t access_count;
+        std::atomic<size_t> access_count;
+        
+        ChunkCache() : chunk_id(0), access_count(0) {}
+        ChunkCache(uint64_t id, std::vector<Mag18RecordV2> recs, size_t count)
+            : chunk_id(id), records(std::move(recs)), access_count(count) {}
+        
+        // Move constructor (atomic requires explicit move)
+        ChunkCache(ChunkCache&& other) noexcept
+            : chunk_id(other.chunk_id),
+              records(std::move(other.records)),
+              access_count(other.access_count.load()) {}
+        
+        // Move assignment (atomic requires explicit move)
+        ChunkCache& operator=(ChunkCache&& other) noexcept {
+            if (this != &other) {
+                chunk_id = other.chunk_id;
+                records = std::move(other.records);
+                access_count.store(other.access_count.load());
+            }
+            return *this;
+        }
+        
+        // Delete copy operations (atomics can't be copied)
+        ChunkCache(const ChunkCache&) = delete;
+        ChunkCache& operator=(const ChunkCache&) = delete;
     };
     static constexpr size_t MAX_CACHED_CHUNKS = 10;
     mutable std::vector<ChunkCache> chunk_cache_;
+    mutable std::shared_mutex cache_mutex_;  // Reader-writer lock for cache
     
     // Internal methods
     bool loadHeader();

@@ -52,6 +52,9 @@ target_link_libraries(build_mag18_catalog_v2 PRIVATE ioc_gaialib)
 add_executable(test_mag18_catalog_v2 test_mag18_catalog_v2.cpp)
 target_link_libraries(test_mag18_catalog_v2 PRIVATE ioc_gaialib)
 
+add_executable(test_mag18_parallel test_mag18_parallel.cpp)
+target_link_libraries(test_mag18_parallel PRIVATE ioc_gaialib)
+
 # Install examples
 install(TARGETS simple_test integration_test real_data_test compile_catalog test_catalog_query quick_catalog_test test_mag17 test_grappa test_local_catalog
     RUNTIME DESTINATION bin

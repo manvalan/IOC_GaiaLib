@@ -15,12 +15,33 @@ static constexpr double HALFPI = 0.5 * PI;
 static constexpr double DEG2RAD = PI / 180.0;
 static constexpr double RAD2DEG = 180.0 / PI;
 
-Mag18CatalogV2::Mag18CatalogV2() : file_(nullptr) {
+Mag18CatalogV2::Mag18CatalogV2() 
+    : file_(nullptr), 
+      enable_parallel_(true),
+      num_threads_(std::thread::hardware_concurrency()) {
     chunk_cache_.reserve(MAX_CACHED_CHUNKS);
+    if (num_threads_ == 0) num_threads_ = 4;  // Fallback
+}
+
+Mag18CatalogV2::Mag18CatalogV2(const std::string& catalog_path)
+    : Mag18CatalogV2() {
+    if (!open(catalog_path)) {
+        throw std::runtime_error("Failed to open catalog: " + catalog_path);
+    }
 }
 
 Mag18CatalogV2::~Mag18CatalogV2() {
     close();
+}
+
+void Mag18CatalogV2::setParallelProcessing(bool enable, size_t num_threads) {
+    enable_parallel_.store(enable);
+    if (num_threads > 0) {
+        num_threads_ = num_threads;
+    } else {
+        num_threads_ = std::thread::hardware_concurrency();
+        if (num_threads_ == 0) num_threads_ = 4;
+    }
 }
 
 bool Mag18CatalogV2::open(const std::string& catalog_path) {
@@ -255,11 +276,14 @@ std::vector<uint32_t> Mag18CatalogV2::getPixelsInCone(double ra, double dec,
 }
 
 std::vector<Mag18RecordV2> Mag18CatalogV2::readChunk(uint64_t chunk_id) {
-    // Check cache first
-    for (auto& cached : chunk_cache_) {
-        if (cached.chunk_id == chunk_id) {
-            cached.access_count++;
-            return cached.records;
+    // Check cache first (shared read lock)
+    {
+        std::shared_lock<std::shared_mutex> lock(cache_mutex_);
+        for (auto& cached : chunk_cache_) {
+            if (cached.chunk_id == chunk_id) {
+                cached.access_count.fetch_add(1, std::memory_order_relaxed);
+                return cached.records;
+            }
         }
     }
     
@@ -270,13 +294,16 @@ std::vector<Mag18RecordV2> Mag18CatalogV2::readChunk(uint64_t chunk_id) {
     
     const ChunkInfo& chunk = chunk_index_[chunk_id];
     
-    // Read compressed data
+    // Read compressed data (exclusive file lock)
     std::vector<uint8_t> compressed(chunk.compressed_size);
-    if (fseek(file_, chunk.file_offset, SEEK_SET) != 0) {
-        return {};
-    }
-    if (fread(compressed.data(), 1, chunk.compressed_size, file_) != chunk.compressed_size) {
-        return {};
+    {
+        std::lock_guard<std::mutex> file_lock(file_mutex_);
+        if (fseek(file_, chunk.file_offset, SEEK_SET) != 0) {
+            return {};
+        }
+        if (fread(compressed.data(), 1, chunk.compressed_size, file_) != chunk.compressed_size) {
+            return {};
+        }
     }
     
     // Decompress
@@ -290,16 +317,22 @@ std::vector<Mag18RecordV2> Mag18CatalogV2::readChunk(uint64_t chunk_id) {
     std::vector<Mag18RecordV2> records(chunk.num_stars);
     memcpy(records.data(), uncompressed.data(), chunk.num_stars * sizeof(Mag18RecordV2));
     
-    // Add to cache (LRU eviction)
-    if (chunk_cache_.size() >= MAX_CACHED_CHUNKS) {
-        // Evict least recently used
-        auto lru = std::min_element(chunk_cache_.begin(), chunk_cache_.end(),
-            [](const ChunkCache& a, const ChunkCache& b) {
-                return a.access_count < b.access_count;
-            });
-        *lru = {chunk_id, records, 1};
-    } else {
-        chunk_cache_.push_back({chunk_id, records, 1});
+    // Add to cache (exclusive write lock)
+    {
+        std::unique_lock<std::shared_mutex> lock(cache_mutex_);
+        if (chunk_cache_.size() >= MAX_CACHED_CHUNKS) {
+            // Evict least recently used
+            auto lru = std::min_element(chunk_cache_.begin(), chunk_cache_.end(),
+                [](const ChunkCache& a, const ChunkCache& b) {
+                    return a.access_count.load() < b.access_count.load();
+                });
+            // Move assign (explicit for atomic members)
+            lru->chunk_id = chunk_id;
+            lru->records = std::move(records);
+            lru->access_count.store(1);
+        } else {
+            chunk_cache_.emplace_back(chunk_id, std::move(records), 1);
+        }
     }
     
     return records;
@@ -350,37 +383,102 @@ std::optional<GaiaStar> Mag18CatalogV2::queryBySourceId(uint64_t source_id) {
 
 std::vector<GaiaStar> Mag18CatalogV2::queryCone(double ra, double dec, double radius,
                                                   size_t max_results) {
-    std::vector<GaiaStar> results;
-    
     // Get HEALPix pixels intersecting cone
     auto pixels = getPixelsInCone(ra, dec, radius);
     
-    // For each pixel, scan stars
-    for (uint32_t pixel : pixels) {
-        // Find pixel in index
-        auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
-            [](const HEALPixIndexEntry& entry, uint32_t pix) {
-                return entry.pixel_id < pix;
-            });
-        
-        if (it == healpix_index_.end() || it->pixel_id != pixel) {
-            continue; // No stars in this pixel
-        }
-        
-        // Scan all stars in pixel
-        for (uint32_t i = 0; i < it->num_stars; ++i) {
-            auto record = readRecord(it->first_star_idx + i);
-            if (!record) continue;
+    // If parallel processing is disabled or few pixels, use sequential
+    if (!enable_parallel_.load() || pixels.size() < 4) {
+        std::vector<GaiaStar> results;
+        for (uint32_t pixel : pixels) {
+            // Find pixel in index
+            auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
+                [](const HEALPixIndexEntry& entry, uint32_t pix) {
+                    return entry.pixel_id < pix;
+                });
             
-            double dist = angularDistance(ra, dec, record->ra, record->dec);
-            if (dist <= radius) {
-                results.push_back(recordToStar(*record));
+            if (it == healpix_index_.end() || it->pixel_id != pixel) {
+                continue;
+            }
+            
+            // Scan all stars in pixel
+            for (uint32_t i = 0; i < it->num_stars; ++i) {
+                auto record = readRecord(it->first_star_idx + i);
+                if (!record) continue;
                 
-                if (max_results > 0 && results.size() >= max_results) {
-                    return results;
+                double dist = angularDistance(ra, dec, record->ra, record->dec);
+                if (dist <= radius) {
+                    results.push_back(recordToStar(*record));
+                    
+                    if (max_results > 0 && results.size() >= max_results) {
+                        return results;
+                    }
                 }
             }
         }
+        return results;
+    }
+    
+    // PARALLEL PROCESSING for multiple pixels
+    std::vector<GaiaStar> results;
+    std::mutex results_mutex;
+    std::atomic<bool> limit_reached(false);
+    
+    // Split pixels into batches for threads
+    size_t pixels_per_thread = (pixels.size() + num_threads_ - 1) / num_threads_;
+    std::vector<std::future<void>> futures;
+    
+    for (size_t t = 0; t < num_threads_ && t * pixels_per_thread < pixels.size(); ++t) {
+        size_t start_idx = t * pixels_per_thread;
+        size_t end_idx = std::min(start_idx + pixels_per_thread, pixels.size());
+        
+        futures.push_back(std::async(std::launch::async, [&, start_idx, end_idx]() {
+            std::vector<GaiaStar> thread_results;
+            
+            for (size_t p = start_idx; p < end_idx && !limit_reached.load(); ++p) {
+                uint32_t pixel = pixels[p];
+                
+                // Find pixel in index
+                auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
+                    [](const HEALPixIndexEntry& entry, uint32_t pix) {
+                        return entry.pixel_id < pix;
+                    });
+                
+                if (it == healpix_index_.end() || it->pixel_id != pixel) {
+                    continue;
+                }
+                
+                // Scan all stars in pixel
+                for (uint32_t i = 0; i < it->num_stars && !limit_reached.load(); ++i) {
+                    auto record = readRecord(it->first_star_idx + i);
+                    if (!record) continue;
+                    
+                    double dist = angularDistance(ra, dec, record->ra, record->dec);
+                    if (dist <= radius) {
+                        thread_results.push_back(recordToStar(*record));
+                    }
+                }
+            }
+            
+            // Merge thread results
+            if (!thread_results.empty()) {
+                std::lock_guard<std::mutex> lock(results_mutex);
+                results.insert(results.end(), thread_results.begin(), thread_results.end());
+                
+                if (max_results > 0 && results.size() >= max_results) {
+                    limit_reached.store(true);
+                }
+            }
+        }));
+    }
+    
+    // Wait for all threads
+    for (auto& future : futures) {
+        future.get();
+    }
+    
+    // Truncate if needed
+    if (max_results > 0 && results.size() > max_results) {
+        results.resize(max_results);
     }
     
     return results;
@@ -389,32 +487,94 @@ std::vector<GaiaStar> Mag18CatalogV2::queryCone(double ra, double dec, double ra
 std::vector<GaiaStar> Mag18CatalogV2::queryConeWithMagnitude(double ra, double dec, double radius,
                                                                double mag_min, double mag_max,
                                                                size_t max_results) {
-    std::vector<GaiaStar> results;
     auto pixels = getPixelsInCone(ra, dec, radius);
     
-    for (uint32_t pixel : pixels) {
-        auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
-            [](const HEALPixIndexEntry& entry, uint32_t pix) {
-                return entry.pixel_id < pix;
-            });
+    // Sequential for small queries
+    if (!enable_parallel_.load() || pixels.size() < 4) {
+        std::vector<GaiaStar> results;
         
-        if (it == healpix_index_.end() || it->pixel_id != pixel) continue;
-        
-        for (uint32_t i = 0; i < it->num_stars; ++i) {
-            auto record = readRecord(it->first_star_idx + i);
-            if (!record) continue;
+        for (uint32_t pixel : pixels) {
+            auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
+                [](const HEALPixIndexEntry& entry, uint32_t pix) {
+                    return entry.pixel_id < pix;
+                });
             
-            if (record->g_mag < mag_min || record->g_mag > mag_max) continue;
+            if (it == healpix_index_.end() || it->pixel_id != pixel) continue;
             
-            double dist = angularDistance(ra, dec, record->ra, record->dec);
-            if (dist <= radius) {
-                results.push_back(recordToStar(*record));
+            for (uint32_t i = 0; i < it->num_stars; ++i) {
+                auto record = readRecord(it->first_star_idx + i);
+                if (!record) continue;
                 
-                if (max_results > 0 && results.size() >= max_results) {
-                    return results;
+                if (record->g_mag < mag_min || record->g_mag > mag_max) continue;
+                
+                double dist = angularDistance(ra, dec, record->ra, record->dec);
+                if (dist <= radius) {
+                    results.push_back(recordToStar(*record));
+                    
+                    if (max_results > 0 && results.size() >= max_results) {
+                        return results;
+                    }
                 }
             }
         }
+        return results;
+    }
+    
+    // PARALLEL PROCESSING
+    std::vector<GaiaStar> results;
+    std::mutex results_mutex;
+    std::atomic<bool> limit_reached(false);
+    
+    size_t pixels_per_thread = (pixels.size() + num_threads_ - 1) / num_threads_;
+    std::vector<std::future<void>> futures;
+    
+    for (size_t t = 0; t < num_threads_ && t * pixels_per_thread < pixels.size(); ++t) {
+        size_t start_idx = t * pixels_per_thread;
+        size_t end_idx = std::min(start_idx + pixels_per_thread, pixels.size());
+        
+        futures.push_back(std::async(std::launch::async, [&, start_idx, end_idx]() {
+            std::vector<GaiaStar> thread_results;
+            
+            for (size_t p = start_idx; p < end_idx && !limit_reached.load(); ++p) {
+                uint32_t pixel = pixels[p];
+                
+                auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
+                    [](const HEALPixIndexEntry& entry, uint32_t pix) {
+                        return entry.pixel_id < pix;
+                    });
+                
+                if (it == healpix_index_.end() || it->pixel_id != pixel) continue;
+                
+                for (uint32_t i = 0; i < it->num_stars && !limit_reached.load(); ++i) {
+                    auto record = readRecord(it->first_star_idx + i);
+                    if (!record) continue;
+                    
+                    if (record->g_mag < mag_min || record->g_mag > mag_max) continue;
+                    
+                    double dist = angularDistance(ra, dec, record->ra, record->dec);
+                    if (dist <= radius) {
+                        thread_results.push_back(recordToStar(*record));
+                    }
+                }
+            }
+            
+            if (!thread_results.empty()) {
+                std::lock_guard<std::mutex> lock(results_mutex);
+                results.insert(results.end(), thread_results.begin(), thread_results.end());
+                
+                if (max_results > 0 && results.size() >= max_results) {
+                    limit_reached.store(true);
+                }
+            }
+        }));
+    }
+    
+    for (auto& future : futures) {
+        future.get();
+    }
+    
+    if (max_results > 0 && results.size() > max_results) {
+        results.resize(max_results);
     }
     
     return results;
