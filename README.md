@@ -4,6 +4,52 @@
 
 Complete, high-performance library for querying and caching Gaia DR3/EDR3/DR2 stellar catalogs with local HEALPix-based storage.
 
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
+[![CMake](https://img.shields.io/badge/CMake-3.15+-green.svg)](https://cmake.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![OpenMP](https://img.shields.io/badge/OpenMP-5.1-orange.svg)](https://www.openmp.org/)
+
+---
+
+## 🚀 Quick Start
+
+### Installation
+
+```bash
+# Clone and build
+git clone https://github.com/manvalan/IOC_GaiaLib.git
+cd IOC_GaiaLib
+mkdir build && cd build
+cmake ..
+make -j8
+sudo make install  # Optional: install system-wide
+```
+
+### Integrate into Your Project
+
+**CMakeLists.txt:**
+```cmake
+find_package(IOC_GaiaLib REQUIRED)
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE IOC_GaiaLib::ioc_gaialib)
+```
+
+**main.cpp:**
+```cpp
+#include <ioc_gaialib/gaia_mag18_catalog_v2.h>
+
+int main() {
+    ioc::gaia::Mag18CatalogV2 catalog("gaia_mag18_v2.mag18v2");
+    auto stars = catalog.queryCone(180.0, 0.0, 5.0);  // RA, Dec, radius
+    std::cout << "Found " << stars.size() << " stars\n";
+    return 0;
+}
+```
+
+📖 **[Complete Integration Guide →](docs/INTEGRATION_GUIDE.md)**
+
+---
+
 ## Features
 
 ### Core Functionality

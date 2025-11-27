@@ -92,20 +92,47 @@ if(BUILD_TESTS)
     # TODO: add_subdirectory(tests)
 endif()
 
-# Install
+# Install library and headers
 install(TARGETS ioc_gaialib
     EXPORT IOC_GaiaLibTargets
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
+    INCLUDES DESTINATION include
 )
 
 install(DIRECTORY include/
     DESTINATION include
+    FILES_MATCHING PATTERN "*.h"
 )
 
+# Install CMake config files
+include(CMakePackageConfigHelpers)
+
+# Generate config file
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/IOC_GaiaLibConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/IOC_GaiaLibConfig.cmake"
+    INSTALL_DESTINATION lib/cmake/IOC_GaiaLib
+)
+
+# Generate version file
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/IOC_GaiaLibConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+# Install config files
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/IOC_GaiaLibConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/IOC_GaiaLibConfigVersion.cmake"
+    DESTINATION lib/cmake/IOC_GaiaLib
+)
+
+# Install targets
 install(EXPORT IOC_GaiaLibTargets
-    FILE IOC_GaiaLibConfig.cmake
-    NAMESPACE IOC::
+    FILE IOC_GaiaLibTargets.cmake
+    NAMESPACE IOC_GaiaLib::
     DESTINATION lib/cmake/IOC_GaiaLib
 )
