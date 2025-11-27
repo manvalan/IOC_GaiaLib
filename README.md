@@ -6,6 +6,7 @@ Complete, high-performance library for querying and caching Gaia DR3/EDR3/DR2 st
 
 ## Features
 
+### Core Functionality
 - ✅ **Full TAP/ADQL Query Support** - Cone search, box search, custom ADQL queries, source ID lookup
 - ✅ **Local HEALPix Cache** - Fast spatial queries with tile-based storage (NSIDE=32, 12,288 tiles)
 - ✅ **Multiple Data Releases** - DR3, EDR3, DR2 support
@@ -14,6 +15,21 @@ Complete, high-performance library for querying and caching Gaia DR3/EDR3/DR2 st
 - ✅ **Modern C++17** - Clean API, RAII, move semantics, pImpl idiom
 - ✅ **Performance** - Cache queries ~6000x faster than network queries (3ms vs 18s)
 - ✅ **Real-World Tested** - Validated with Aldebaran, Orion Belt, Sirius, Pleiades data
+
+### Advanced Features
+- 🆕 **Offline Catalog Compiler** - Build complete local Gaia DR3 catalog with resumable downloads
+  - HEALPix tessellation with 12,288 tiles
+  - zlib compression (50-70% space savings)
+  - Checkpoint system for interrupted downloads
+  - Detailed progress tracking with ETA
+  - Binary format optimized for fast queries
+  
+- 🆕 **GRAPPA3E Integration** - Asteroid catalog from IMCCE
+  - Query asteroids by Gaia source_id, number, or designation
+  - Spatial queries with HEALPix indexing
+  - Physical parameters (size, albedo, rotation)
+  - Seamless integration with Gaia stellar data
+  - ~1.5M asteroids with astrometric data
 
 ## Quick Start
 
@@ -44,20 +60,27 @@ for (const auto& star : stars) {
 
 ### Requirements
 
-- C++17 compatible compiler
+- C++17 compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
 - CMake >= 3.15
-- libcurl
-- libxml2 (for VOTable parsing)
+- libcurl (HTTP requests)
+- libxml2 (VOTable parsing)
+- zlib (compression, usually pre-installed)
+- p7zip (only for GRAPPA3E extraction)
 
-### Build
+### Quick Setup
 
 ```bash
+# Clone repository
 git clone https://github.com/manvalan/IOC_GaiaLib.git
 cd IOC_GaiaLib
+
+# Run automated setup (builds library + downloads GRAPPA3E docs)
+./scripts/setup.sh
+
+# Or manual build
 mkdir build && cd build
 cmake ..
 make -j4
-sudo make install
 ```
 
 ### Run Examples
@@ -137,6 +160,71 @@ struct GaiaStar {
 };
 ```
 
+### 🆕 GaiaCatalogCompiler - Offline Full-Sky Catalog
+
+```cpp
+#include <ioc_gaialib/catalog_compiler.h>
+
+GaiaCatalogCompiler compiler("/output/dir", 32, GaiaRelease::DR3);
+compiler.setClient(&client);
+compiler.setMaxMagnitude(17.0);           // Limit to mag 17
+compiler.setEnableCompression(true);      // Enable zlib compression
+compiler.setCompressionLevel(6);          // Compression level 0-9
+compiler.setLogging("catalog.log", true); // Detailed logging
+compiler.setParallelWorkers(4);           // Parallel downloads
+
+// Compile with progress callback
+auto stats = compiler.compile([](const CompilationProgress& p) {
+    std::cout << "[" << p.percent << "%] " 
+              << "Tile " << p.current_tile_id 
+              << " - " << p.stars_processed << " stars"
+              << " - ETA: " << p.eta_seconds << "s\n";
+});
+
+// Resume interrupted compilation
+compiler.resume();
+
+// Statistics
+std::cout << "Total stars: " << stats.total_stars << "\n";
+std::cout << "Disk size: " << (stats.disk_size_bytes / 1e9) << " GB\n";
+```
+
+### 🆕 GrappaReader - Asteroid Catalog
+
+```cpp
+#include <ioc_gaialib/grappa_reader.h>
+
+// Initialize GRAPPA3E reader
+GrappaReader grappa("~/catalogs/GRAPPA3E");
+grappa.loadIndex();
+
+// Query by asteroid number
+auto ceres = grappa.queryByNumber(1);
+if (ceres) {
+    std::cout << "Ceres diameter: " << ceres->diameter_km << " km\n";
+    std::cout << "Gaia source_id: " << ceres->gaia_source_id << "\n";
+}
+
+// Cone search for asteroids
+auto asteroids = grappa.queryCone(ra, dec, radius);
+
+// Advanced filtering
+AsteroidQuery query;
+query.diameter_min_km = 100.0;     // Large asteroids only
+query.h_mag_max = 10.0;            // Bright asteroids
+query.only_numbered = true;        // Numbered asteroids only
+auto results = grappa.query(query);
+
+// Integration with Gaia data
+GaiaAsteroidMatcher matcher(&grappa);
+for (const auto& star : stars) {
+    if (matcher.isAsteroid(star.source_id)) {
+        auto asteroid = matcher.getAsteroidData(star.source_id);
+        std::cout << "This is asteroid: " << asteroid->designation << "\n";
+    }
+}
+```
+
 ## Performance Benchmarks
 
 Real-world tests with Gaia DR3:
@@ -165,11 +253,32 @@ MIT License - see [LICENSE](LICENSE) file.
 - Michele Bigi (@manvalan)
 - IOccultCalc Team
 
+## Examples
+
+The library includes several example programs:
+
+- `simple_test` - Basic library functionality
+- `integration_test` - Cache-client integration
+- `real_data_test` - Real-world queries (Aldebaran, Orion, Sirius, Pleiades)
+- `compile_catalog` - Build offline Gaia DR3 catalog with compression
+- `test_grappa` - GRAPPA3E asteroid catalog integration
+- `test_catalog_query` - ADQL query diagnostics
+- `test_mag17` - Sample magnitude 17 stars across sky
+
+## Documentation
+
+- [GRAPPA3E Integration Guide](docs/GRAPPA3E_IMPLEMENTATION.md) - Asteroid catalog setup and usage
+- [API Reference](docs/API.md) - Complete API documentation (coming soon)
+- [Performance Guide](docs/PERFORMANCE.md) - Optimization tips (coming soon)
+
 ## Acknowledgments
 
-This work has made use of data from the European Space Agency (ESA) mission Gaia (https://www.cosmos.esa.int/gaia), processed by the Gaia Data Processing and Analysis Consortium (DPAC).
+This work has made use of:
+- Data from the European Space Agency (ESA) mission **Gaia** (https://www.cosmos.esa.int/gaia), processed by the Gaia Data Processing and Analysis Consortium (DPAC)
+- **GRAPPA3E** catalog from IMCCE (Institut de Mécanique Céleste et de Calcul des Éphémérides)
 
 ## Related Projects
 
 - [IOccultCalc](https://github.com/manvalan/IOccultCalc) - Asteroid occultation predictions
 - [PyGaia](https://github.com/agabrown/PyGaia) - Python Gaia utilities
+- [GRAPPA3E](https://ftp.imcce.fr/pub/catalogs/GRAPPA3E/) - Gaia Refined Asteroid Physical Parameters Archive
