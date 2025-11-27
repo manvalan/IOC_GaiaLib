@@ -25,7 +25,34 @@ target_link_libraries(test_mag17 PRIVATE ioc_gaialib)
 add_executable(test_grappa test_grappa.cpp)
 target_link_libraries(test_grappa PRIVATE ioc_gaialib)
 
+add_executable(test_local_catalog test_local_catalog.cpp)
+target_link_libraries(test_local_catalog PRIVATE ioc_gaialib)
+
+add_executable(simple_local_test simple_local_test.cpp)
+target_link_libraries(simple_local_test PRIVATE ioc_gaialib)
+
+add_executable(comprehensive_local_test comprehensive_local_test.cpp)
+target_link_libraries(comprehensive_local_test PRIVATE ioc_gaialib)
+
+add_executable(build_mag18_catalog build_mag18_catalog.cpp)
+target_link_libraries(build_mag18_catalog PRIVATE ioc_gaialib)
+
+add_executable(test_mag18_catalog test_mag18_catalog.cpp)
+target_link_libraries(test_mag18_catalog PRIVATE ioc_gaialib)
+
+add_executable(test_unified_catalog test_unified_catalog.cpp)
+target_link_libraries(test_unified_catalog PRIVATE ioc_gaialib)
+
+add_executable(analyze_mag18 analyze_mag18.cpp)
+target_link_libraries(analyze_mag18 PRIVATE ioc_gaialib)
+
+add_executable(build_mag18_catalog_v2 build_mag18_catalog_v2.cpp)
+target_link_libraries(build_mag18_catalog_v2 PRIVATE ioc_gaialib)
+
+add_executable(test_mag18_catalog_v2 test_mag18_catalog_v2.cpp)
+target_link_libraries(test_mag18_catalog_v2 PRIVATE ioc_gaialib)
+
 # Install examples
-install(TARGETS simple_test integration_test real_data_test compile_catalog test_catalog_query quick_catalog_test test_mag17 test_grappa
+install(TARGETS simple_test integration_test real_data_test compile_catalog test_catalog_query quick_catalog_test test_mag17 test_grappa test_local_catalog
     RUNTIME DESTINATION bin
 )

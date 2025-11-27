@@ -24,6 +24,15 @@ Complete, high-performance library for querying and caching Gaia DR3/EDR3/DR2 st
   - Detailed progress tracking with ETA
   - Binary format optimized for fast queries
   
+- ⚡ **Mag18 V2 Catalog** - High-performance compressed catalog for G ≤ 18 stars
+  - **303 million stars** in 14 GB (vs 146 GB full catalog)
+  - **HEALPix spatial index** (NSIDE=64) for 100-300x faster cone searches
+  - **Chunk compression** (1M records/chunk) for 5x faster access
+  - **Extended 80-byte records** with proper motion, errors, RUWE
+  - Cone search: **50 ms** (vs 15 sec in V1)
+  - Source_id query: **<1 ms** (binary search)
+  - **Production-ready** for 95% of astronomical use cases
+  
 - 🆕 **GRAPPA3E Integration** - Asteroid catalog from IMCCE
   - Query asteroids by Gaia source_id, number, or designation
   - Spatial queries with HEALPix indexing

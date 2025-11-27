@@ -17,8 +17,10 @@ GaiaStar::GaiaStar()
       pmra(0.0), pmdec(0.0),
       pmra_error(0.0), pmdec_error(0.0),
       phot_g_mean_mag(0.0), phot_bp_mean_mag(0.0), phot_rp_mean_mag(0.0),
+      bp_rp(0.0),
       astrometric_excess_noise(0.0), astrometric_chi2_al(0.0),
-      visibility_periods_used(0) {}
+      visibility_periods_used(0),
+      ruwe(0.0) {}
 
 bool GaiaStar::isValid() const {
     // Check basic validity criteria
@@ -83,6 +85,7 @@ void JulianDate::toCalendar(int& year, int& month, int& day, double& ut) const {
     
     // Fractional part is UT
     ut = (jd_midnight - a) * 24.0;
+    
 }
 
 // =============================================================================

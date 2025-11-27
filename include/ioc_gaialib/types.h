@@ -40,11 +40,13 @@ struct GaiaStar {
     double phot_g_mean_mag;      ///< G-band mean magnitude [mag]
     double phot_bp_mean_mag;     ///< BP-band mean magnitude [mag]
     double phot_rp_mean_mag;     ///< RP-band mean magnitude [mag]
+    double bp_rp;                ///< BP-RP color [mag]
     
     // Quality flags
     double astrometric_excess_noise;
     double astrometric_chi2_al;
     int visibility_periods_used;
+    double ruwe;                 ///< Renormalized Unit Weight Error
     
     // Constructor
     GaiaStar();

@@ -24,6 +24,10 @@ set(GAIALIB_SOURCES
     src/gaia_client.cpp
     src/catalog_compiler.cpp
     src/grappa_reader.cpp
+    src/gaia_local_catalog.cpp
+    src/gaia_mag18_catalog.cpp
+    src/gaia_mag18_catalog_v2.cpp
+    src/gaia_catalog.cpp
 )
 
 # Create library
