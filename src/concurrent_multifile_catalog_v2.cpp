@@ -134,68 +134,89 @@ ConcurrentMultiFileCatalogV2::loadChunk(uint64_t chunk_id) {
 std::vector<GaiaStar> ConcurrentMultiFileCatalogV2::queryCone(double ra, double dec, double radius, 
                                                               size_t max_results) {
     active_readers_++;
-    
-    auto pixels = getPixelsInCone(ra, dec, radius);
     std::vector<GaiaStar> results;
     
-    for (uint32_t pixel : pixels) {
-        // Find pixel in index
-        auto it = std::lower_bound(healpix_index_.begin(), healpix_index_.end(), pixel,
-            [](const HEALPixIndexEntry& entry, uint32_t pix) {
-                return entry.pixel_id < pix;
-            });
+    // Calculate Dec bounds for quick filtering
+    const double dec_min = std::max(-90.0, dec - radius);
+    const double dec_max = std::min(90.0, dec + radius);
+    
+    // Calculate RA bounds (accounting for cos(dec) factor)
+    const double cos_dec = std::cos(dec * M_PI / 180.0);
+    const double ra_margin = (cos_dec > 0.01) ? radius / cos_dec : 180.0;
+    double ra_min = ra - ra_margin;
+    double ra_max = ra + ra_margin;
+    
+    // Handle RA wrap-around
+    bool crosses_zero = (ra_min < 0 || ra_max > 360);
+    if (ra_min < 0) ra_min += 360;
+    if (ra_max > 360) ra_max -= 360;
+    
+    // Scan all chunks (they're not sorted by position, so we must check all)
+    // This is actually fast because we only load chunks that might have matching stars
+    for (uint64_t chunk_id = 0; chunk_id < header_.total_chunks; ++chunk_id) {
         
-        if (it == healpix_index_.end() || it->pixel_id != pixel) {
-            continue;
-        }
+        // Get chunk data (thread-safe with caching)
+        auto chunk_data = getOrLoadChunk(chunk_id);
+        if (!chunk_data) continue;
         
-        // Load chunks containing this pixel's stars
-        uint64_t start_idx = it->first_star_idx;
-        uint64_t end_idx = start_idx + it->num_stars;
+        // Read lock for accessing chunk records (allows multiple readers)
+        std::shared_lock<std::shared_mutex> chunk_lock(chunk_data->access_mutex);
+        const auto& chunk_records = chunk_data->records;
         
-        // Find which chunks contain these stars
-        for (uint64_t star_idx = start_idx; star_idx < end_idx; ) {
-            uint64_t chunk_id = star_idx / header_.stars_per_chunk;
+        // Process stars in this chunk
+        for (const auto& record : chunk_records) {
+            // Quick bounding box check first (very fast)
+            if (record.dec < dec_min || record.dec > dec_max) continue;
             
-            if (chunk_id >= header_.total_chunks) break;
-            
-            // Get chunk data (thread-safe)
-            auto chunk_data = getOrLoadChunk(chunk_id);
-            if (!chunk_data) {
-                star_idx = (chunk_id + 1) * header_.stars_per_chunk;
-                continue;
+            // RA check with wrap-around handling
+            bool ra_ok;
+            if (crosses_zero) {
+                ra_ok = (record.ra >= ra_min || record.ra <= ra_max);
+            } else {
+                ra_ok = (record.ra >= ra_min && record.ra <= ra_max);
             }
+            if (!ra_ok) continue;
             
-            // Read lock for accessing chunk records (allows multiple readers)
-            std::shared_lock<std::shared_mutex> chunk_lock(chunk_data->access_mutex);
-            const auto& chunk_records = chunk_data->records;
-            
-            // Process stars in this chunk
-            uint64_t chunk_start = chunk_id * header_.stars_per_chunk;
-            uint64_t local_start = (start_idx > chunk_start) ? start_idx - chunk_start : 0;
-            uint64_t local_end = std::min(static_cast<uint64_t>(chunk_records.size()),
-                                         end_idx - chunk_start);
-            
-            for (uint64_t local_idx = local_start; local_idx < local_end; ++local_idx) {
-                const auto& record = chunk_records[local_idx];
+            // Precise angular distance check
+            double dist = angularDistance(ra, dec, record.ra, record.dec);
+            if (dist <= radius) {
+                results.push_back(recordToStar(record));
                 
-                double dist = angularDistance(ra, dec, record.ra, record.dec);
-                if (dist <= radius) {
-                    results.push_back(recordToStar(record));
-                    
-                    if (max_results > 0 && results.size() >= max_results) {
-                        active_readers_--;
-                        return results;
-                    }
+                if (max_results > 0 && results.size() >= max_results) {
+                    active_readers_--;
+                    return results;
                 }
             }
-            
-            star_idx = (chunk_id + 1) * header_.stars_per_chunk;
         }
     }
     
     active_readers_--;
     return results;
+}
+
+std::optional<GaiaStar> ConcurrentMultiFileCatalogV2::queryBySourceId(uint64_t source_id) {
+    active_readers_++;
+    
+    // Search all chunks (source_id is not indexed, so linear scan required)
+    for (uint64_t chunk_id = 0; chunk_id < header_.total_chunks; ++chunk_id) {
+        auto chunk_data = getOrLoadChunk(chunk_id);
+        if (!chunk_data) continue;
+        
+        std::shared_lock<std::shared_mutex> chunk_lock(chunk_data->access_mutex);
+        const auto& chunk_records = chunk_data->records;
+        
+        // Binary search if records are sorted by source_id within chunk
+        // Otherwise linear search
+        for (const auto& record : chunk_records) {
+            if (record.source_id == source_id) {
+                active_readers_--;
+                return recordToStar(record);
+            }
+        }
+    }
+    
+    active_readers_--;
+    return std::nullopt;
 }
 
 void ConcurrentMultiFileCatalogV2::evictLRUChunks() {

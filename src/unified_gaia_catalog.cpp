@@ -237,7 +237,9 @@ public:
     std::optional<GaiaStar> performSourceIdQuery(uint64_t source_id) {
         switch (config_.catalog_type) {
             case GaiaCatalogConfig::CatalogType::MULTIFILE_V2:
-                // Multi-file catalog doesn't currently support source ID queries
+                if (multifile_catalog_) {
+                    return multifile_catalog_->queryBySourceId(source_id);
+                }
                 break;
                 
             case GaiaCatalogConfig::CatalogType::COMPRESSED_V2:

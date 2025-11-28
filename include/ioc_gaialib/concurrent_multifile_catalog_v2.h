@@ -9,6 +9,7 @@
 #include <shared_mutex>
 #include <unordered_map>
 #include <chrono>
+#include <optional>
 #include "gaia_mag18_catalog_v2.h"
 
 namespace ioc {
@@ -43,6 +44,11 @@ public:
      */
     std::vector<GaiaStar> queryCone(double ra, double dec, double radius, 
                                     size_t max_results = 0);
+    
+    /**
+     * @brief Thread-safe search by source_id
+     */
+    std::optional<GaiaStar> queryBySourceId(uint64_t source_id);
     
     /**
      * @brief Get basic catalog info (thread-safe, no locking needed)
