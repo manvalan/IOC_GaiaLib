@@ -34,33 +34,47 @@ add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE IOC_GaiaLib::ioc_gaialib)
 ```
 
-**main.cpp (using Mag18 V2 - Fast Offline Catalog):**
+**main.cpp (using UnifiedGaiaCatalog - Recommended API):**
 ```cpp
-#include <ioc_gaialib/gaia_mag18_catalog_v2.h>
+#include <ioc_gaialib/unified_gaia_catalog.h>
+#include <iostream>
 
 int main() {
-    ioc::gaia::Mag18CatalogV2 catalog("~/.catalog/gaia_mag18_v2.mag18v2");
+    using namespace ioc::gaia;
     
-    // Statistics
-    std::cout << "Stars: " << catalog.getTotalStars() << "\n";
+    // Configuration JSON (multifile_v2 recommended for best performance)
+    std::string config = R"({
+        "catalog_type": "multifile_v2",
+        "catalog_path": ")" + std::string(getenv("HOME")) + R"(/.catalog/gaia_mag18_v2_multifile",
+        "enable_iau_names": true,
+        "cache_size_mb": 512
+    })";
     
-    // Cone search (50ms for 5° region)
-    auto stars = catalog.queryCone(180.0, 0.0, 5.0);
+    // Initialize unified catalog
+    UnifiedGaiaCatalog::initialize(config);
+    auto& catalog = UnifiedGaiaCatalog::getInstance();
+    
+    // Cone search (~0.001ms for 0.5°, ~13ms for 5°)
+    ConeSearchParams params{180.0, 0.0, 5.0};  // RA, Dec, radius
+    params.max_magnitude = 12.0;
+    auto stars = catalog.queryCone(params);
     std::cout << "Found " << stars.size() << " stars\n";
     
-    // Magnitude filter
-    auto bright = catalog.queryConeWithMagnitude(180.0, 0.0, 5.0, 10.0, 12.0);
-    std::cout << "Bright: " << bright.size() << " stars\n";
+    // Query by star name (with IAU official names)
+    auto sirius = catalog.queryByName("Sirius");
+    if (sirius) {
+        std::cout << "Sirius: " << sirius->designation 
+                  << " (mag " << sirius->phot_g_mean_mag << ")\n";
+    }
     
-    // Parallel queries
-    catalog.setParallelProcessing(true, 4);
-    auto result = catalog.queryBrightest(180.0, 0.0, 5.0, 10);
+    // Get N brightest stars
+    auto brightest = catalog.queryBrightest(params, 10);
     
     return 0;
 }
 ```
 
-📖 **[V2 Catalog Quick Start →](docs/MAG18_V2_QUICK_START.md)** | **[Complete Integration Guide →](docs/INTEGRATION_GUIDE.md)**
+📖 **[UnifiedGaiaCatalog Guide →](docs/UNIFIED_API_GUIDE.md)** | **[Migration Guide →](MIGRATION_GUIDE.md)** | **[Complete Integration Guide →](docs/INTEGRATION_GUIDE.md)**
 
 ---
 
@@ -77,6 +91,14 @@ int main() {
 - ✅ **Real-World Tested** - Validated with Aldebaran, Orion Belt, Sirius, Pleiades data
 
 ### Advanced Features
+- 🆕 **UnifiedGaiaCatalog** - Single unified API for all catalog types
+  - **JSON configuration** for easy setup
+  - **451 IAU official star names** with automatic cross-matching
+  - **Multifile V2 support** (0.001ms small cone, 13ms medium cone)
+  - Supports: multifile_v2, compressed_v2, online_esa
+  - Thread-safe singleton pattern
+  - Automatic Bayer/Flamsteed/HD/HIP designation lookup
+
 - 🆕 **Offline Catalog Compiler** - Build complete local Gaia DR3 catalog with resumable downloads
   - HEALPix tessellation with 12,288 tiles
   - zlib compression (50-70% space savings)
@@ -84,16 +106,20 @@ int main() {
   - Detailed progress tracking with ETA
   - Binary format optimized for fast queries
   
-- ⚡ **Mag18 V2 Catalog** - High-performance compressed catalog for G ≤ 18 stars
-  - **231 million stars** in 9.2 GB compressed (installed at ~/.catalog/)
-  - **HEALPix spatial index** (NSIDE=64) for 100-300x faster cone searches
+- ⚡ **Multifile V2 Catalog** - Ultra-fast HEALPix-partitioned catalog (RECOMMENDED)
+  - **231 million stars** in ~/.catalog/gaia_mag18_v2_multifile/
+  - **HEALPix spatial index** (NSIDE=64) with 49,152 files
+  - **Cone search 0.5°: 0.001 ms** (blazing fast!)
+  - **Cone search 5°: 13 ms** (excellent performance)
+  - **Cone search 15°: 18 ms** (large regions)
+  - Memory-mapped files for instant access
+  - **Production-ready** for real-time applications
+
+- ⚡ **Compressed V2 Catalog** - Single-file compressed catalog (alternative)
+  - **231 million stars** in 9.2 GB compressed single file
   - **Chunk compression** (1M records/chunk) for minimal memory usage
-  - **Extended 80-byte records** with proper motion, errors, quality metrics
-  - Cone search 0.5°: **50 ms** (vs 15 sec in V1 — 300x faster)
-  - Cone search 5°: **500 ms** (vs 48 sec in V1 — 96x faster)
-  - Source_id query: **<1 ms** (binary search)
-  - **Production-ready** for 95% of astronomical use cases
-  - **Thread-safe** with OpenMP parallelization support
+  - Cone search 5°: ~500 ms (slower than multifile)
+  - Better for limited disk I/O environments
   - **Minimal RAM**: ~330 MB regardless of query size
   
 - 🆕 **GRAPPA3E Integration** - Asteroid catalog from IMCCE
@@ -170,7 +196,43 @@ make -j4
 
 ## API Overview
 
-### GaiaClient - Direct Queries
+### UnifiedGaiaCatalog - Recommended API ⭐
+
+```cpp
+#include <ioc_gaialib/unified_gaia_catalog.h>
+using namespace ioc::gaia;
+
+// JSON configuration
+std::string config = R"({
+    "catalog_type": "multifile_v2",
+    "catalog_path": "/Users/you/.catalog/gaia_mag18_v2_multifile",
+    "enable_iau_names": true
+})";
+
+// Initialize (once at startup)
+UnifiedGaiaCatalog::initialize(config);
+auto& catalog = UnifiedGaiaCatalog::getInstance();
+
+// Cone search (0.001ms - 18ms depending on size)
+ConeSearchParams params{180.0, 0.0, 5.0};
+params.max_magnitude = 12.0;
+auto stars = catalog.queryCone(params);
+
+// Query by official IAU name (451 stars supported)
+auto sirius = catalog.queryByName("Sirius");
+auto vega = catalog.queryByName("Vega");
+auto polaris = catalog.queryByName("Polaris");
+
+// Query by designation
+auto byHD = catalog.queryByName("HD 48915");    // Sirius
+auto byHIP = catalog.queryByName("HIP 32349");  // Sirius
+auto byBayer = catalog.queryByName("α CMa");    // Sirius
+
+// Get brightest stars in region
+auto brightest = catalog.queryBrightest(params, 10);
+```
+
+### GaiaClient - Direct ESA Queries (Online)
 
 ```cpp
 #include <ioc_gaialib/gaia_client.h>
@@ -299,18 +361,32 @@ for (const auto& star : stars) {
 
 ## Performance Benchmarks
 
-Real-world tests with Gaia DR3:
+### UnifiedGaiaCatalog with Multifile V2 (Recommended)
 
-| Query | Network Time | Cache Time | Speedup | Stars |
-|-------|-------------|-----------|---------|-------|
-| Orion Belt (box) | 6.1s | - | - | 5 |
-| Pleiades (cone) | 18.4s | 3ms | **6000x** | 336 |
-| Sirius (source ID) | 5.8s | - | - | 1 |
+| Query Type | Radius | Time | Stars Found |
+|------------|--------|------|-------------|
+| Small cone | 0.5° | **0.001 ms** | ~50 |
+| Medium cone | 5° | **13 ms** | ~500 |
+| Large cone | 15° | **18 ms** | ~5,000 |
+| Star by name (Sirius) | - | **<1 ms** | 1 |
+| IAU name lookup | - | **<0.1 ms** | 1 |
 
-**Cache benefits:**
-- First query: Downloads from Gaia Archive (~6-18s)
-- Subsequent queries: Local cache access (~3ms)
-- Disk usage: ~0.2 KB per star (JSON format)
+### Comparison with Other Methods
+
+| Method | 5° Cone Search | Notes |
+|--------|----------------|-------|
+| **Multifile V2** | **13 ms** | ⭐ Recommended |
+| Compressed V2 | 500 ms | Single file, slower |
+| Online ESA | 18,000 ms | Network dependent |
+| Old Cache | 3 ms | Limited coverage |
+
+### IAU Official Stars Integration
+- **451 official IAU star names** with automatic cross-matching
+- **297 Bayer designations** (α, β, γ, etc.)
+- **26 Flamsteed numbers** (61 Cyg, etc.)
+- **333 HR catalog** cross-references
+- **406 HD catalog** cross-references
+- **411 HIP catalog** cross-references
 
 ## Contributing
 

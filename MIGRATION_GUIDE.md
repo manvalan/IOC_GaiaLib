@@ -2,11 +2,23 @@
 
 ## From V2 APIs to Unified Catalog System
 
-**Se la tua app cerca ancora cataloghi V2, segui questa guida per la migrazione.**
+**Questa guida spiega come migrare dalle API V2 deprecate all'API UnifiedGaiaCatalog raccomandata.**
+
+---
+
+## 📍 Cataloghi Disponibili e Performance
+
+| Tipo | Percorso | Performance | Uso Raccomandato |
+|------|----------|-------------|------------------|
+| **Multifile V2** | `~/.catalog/gaia_mag18_v2_multifile/` | ⭐ **0.001ms - 18ms** | ✅ **DEFAULT** |
+| Compressed V2 | `~/.catalog/gaia_mag18_v2.mag18v2` | 500ms | Solo se spazio disco limitato |
+| Online ESA | - | 6-18 secondi | Solo per test |
+
+---
 
 ### ⚠️ API Deprecate (Da Non Usare)
 ```cpp
-// ❌ DEPRECATO - Non utilizzare
+// ❌ DEPRECATO - Non utilizzare in nuovo codice
 #include "ioc_gaialib/gaia_mag18_catalog_v2.h"
 #include "ioc_gaialib/multifile_catalog_v2.h" 
 #include "ioc_gaialib/concurrent_multifile_catalog_v2.h"
@@ -16,81 +28,102 @@ Mag18CatalogV2 catalog("path/to/catalog.mag18v2");
 MultiFileCatalogV2 multifile("path/to/multifile_v2/");
 ```
 
-### ✅ Nuove API (Raccomandato)
+### ✅ API Raccomandata: UnifiedGaiaCatalog
 
-#### Opzione 1: UnifiedGaiaCatalog (Più Semplice)
 ```cpp
-// ✅ NUOVO - Uso raccomandato
 #include "ioc_gaialib/unified_gaia_catalog.h"
+#include <cstdlib>
 
-// Configurazione JSON
-std::string config = R"({
-    "catalog_type": "compressed_v2",
-    "compressed_file_path": "/path/to/new_catalog.gz",
-    "timeout_seconds": 30
-})";
+using namespace ioc::gaia;
 
-// Inizializzazione
-if (!UnifiedGaiaCatalog::initialize(config)) {
-    std::cerr << "Errore inizializzazione" << std::endl;
-    return false;
+int main() {
+    // Configurazione JSON con path dinamico
+    std::string home = std::getenv("HOME");
+    std::string config = R"({
+        "catalog_type": "multifile_v2",
+        "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile",
+        "enable_iau_names": true,
+        "cache_size_mb": 512
+    })";
+
+    // Inizializzazione (una volta sola)
+    if (!UnifiedGaiaCatalog::initialize(config)) {
+        std::cerr << "Errore inizializzazione catalogo" << std::endl;
+        return 1;
+    }
+
+    // Ottieni istanza singleton
+    auto& catalog = UnifiedGaiaCatalog::getInstance();
+    
+    // === CONE SEARCH ===
+    ConeSearchParams params{180.0, 0.0, 5.0};  // RA, Dec, radius (gradi)
+    params.max_magnitude = 12.0;
+    auto stars = catalog.queryCone(params);
+    std::cout << "Trovate " << stars.size() << " stelle\n";
+    
+    // === QUERY PER NOME (451 stelle IAU ufficiali) ===
+    auto sirius = catalog.queryByName("Sirius");
+    auto vega = catalog.queryByName("Vega");
+    auto polaris = catalog.queryByName("Polaris");
+    auto rigel = catalog.queryByName("Rigel");
+    auto betelgeuse = catalog.queryByName("Betelgeuse");
+    
+    if (sirius) {
+        std::cout << "Sirius: RA=" << sirius->ra 
+                  << " Dec=" << sirius->dec 
+                  << " mag=" << sirius->phot_g_mean_mag << "\n";
+    }
+    
+    // === QUERY PER DESIGNAZIONE ===
+    auto byHD = catalog.queryByName("HD 48915");     // Sirius (Henry Draper)
+    auto byHIP = catalog.queryByName("HIP 32349");   // Sirius (Hipparcos)
+    auto byBayer = catalog.queryByName("α CMa");     // Sirius (Bayer)
+    
+    // === STELLE PIÙ LUMINOSE ===
+    auto brightest = catalog.queryBrightest(params, 10);
+    
+    return 0;
 }
 
-// Uso
-auto& catalog = UnifiedGaiaCatalog::getInstance();
-auto stars = catalog.queryCone({83.82, 22.01, 2.0, 18.0, 0});
-auto sirius = catalog.queryByName("Sirius");
 ```
 
-#### Opzione 2: GaiaCatalog (Più Controllo)
-```cpp
-// ✅ NUOVO - API avanzata
-#include "ioc_gaialib/gaia_catalog.h"
+---
 
-GaiaCatalogConfig config;
-config.mag18_catalog_path = "/path/to/new_catalog.gz";
-config.multifile_catalog_path = "/path/to/multifile_v2/";
-config.enable_online_fallback = true;
+### 📁 Tipi di Catalogo Supportati
 
-GaiaCatalog catalog(config);
+| catalog_type | Descrizione | Performance |
+|--------------|-------------|-------------|
+| `multifile_v2` | Directory con file HEALPix | ⭐ **0.001-18ms** |
+| `compressed_v2` | File singolo compresso | 500ms |
+| `online_esa` | Query ESA in tempo reale | 6-18s |
 
-// Query automatiche (scelta ottimale del catalogo)
-auto star = catalog.queryStar(12345678901234);      // Source ID
-auto stars = catalog.queryCone(180.0, 0.0, 1.0);   // Cone search
-auto bright = catalog.queryBrightest(180, 0, 5, 10); // Top 10 brightest
-```
-
-### 📁 Nuovi Formati Catalogo
-
-| Formato Vecchio | Formato Nuovo | Descrizione |
-|-----------------|---------------|-------------|
-| `*.mag18v2` | `*.gz` (GaiaMag18Catalog) | Catalogo compresso mag≤18 |
-| `multifile_v2/` | Gaia Multifile V2 directory | Catalogo multifile locale |
-| Online V2 | Unified online | Query ESA automatiche |
+---
 
 ### 🔄 Migrazione Step-by-Step
 
 #### 1. Aggiorna gli Include
 ```cpp
-// Prima
+// Prima (DEPRECATO)
 #include "ioc_gaialib/gaia_mag18_catalog_v2.h"
 
-// Dopo  
+// Dopo (RACCOMANDATO)
 #include "ioc_gaialib/unified_gaia_catalog.h"
 ```
 
 #### 2. Sostituisci l'Inizializzazione
 ```cpp
-// Prima
+// Prima (DEPRECATO)
 Mag18CatalogV2 catalog;
 if (!catalog.open("/path/file.mag18v2")) {
     // errore
 }
 
-// Dopo
+// Dopo (RACCOMANDATO)
+std::string home = std::getenv("HOME");
 std::string config = R"({
-    "catalog_type": "compressed_v2", 
-    "compressed_file_path": "/path/file.gz"
+    "catalog_type": "multifile_v2", 
+    "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile",
+    "enable_iau_names": true
 })";
 
 if (!UnifiedGaiaCatalog::initialize(config)) {
@@ -101,15 +134,17 @@ auto& catalog = UnifiedGaiaCatalog::getInstance();
 
 #### 3. Aggiorna le Query
 ```cpp
-// Prima (V2)
+// Prima (V2 - DEPRECATO)
 auto records = catalog.queryCone(ra, dec, radius);
 for (const auto& record : records) {
     GaiaStar star = record.toGaiaStar();
     // usa star
 }
 
-// Dopo (Unified)
-auto stars = catalog.queryCone({ra, dec, radius});
+// Dopo (Unified - RACCOMANDATO)
+ConeSearchParams params{ra, dec, radius};
+params.max_magnitude = 15.0;
+auto stars = catalog.queryCone(params);
 for (const auto& star : stars) {
     // usa star direttamente
 }
@@ -117,41 +152,39 @@ for (const auto& star : stars) {
 
 ### 🚀 Vantaggi della Migrazione
 
-1. **Nomi Stelle**: Integrazione IAU automatica (451 stelle ufficiali)
-2. **Performance**: Multifile V2 - cone search in 0.000-17ms  
-3. **Cross-match**: HD, HIP, Bayer, Flamsteed automatici
-4. **Cache intelligente**: Gestione automatica dei chunk
-5. **Future-proof**: API stabile per versioni future
+| Feature | API V2 (Deprecata) | UnifiedGaiaCatalog |
+|---------|-------------------|---------------------|
+| Nomi IAU | ❌ Non disponibile | ✅ 451 stelle ufficiali |
+| Performance multifile | ~50ms | ✅ **0.001-18ms** |
+| Cross-match HD/HIP | ❌ Manuale | ✅ Automatico |
+| Designazioni Bayer | ❌ Non disponibile | ✅ 297 supportate |
+| Configurazione | Hardcoded | ✅ JSON flessibile |
+| Singleton thread-safe | ❌ | ✅ |
 
-### 🔧 Configurazioni Esempio
+---
 
-#### Per Catalogo Locale Multifile V2 (Raccomandato)
+### 🔧 Configurazioni JSON Esempio
+
+#### Multifile V2 (⭐ RACCOMANDATO)
 ```json
 {
     "catalog_type": "multifile_v2", 
-    "multifile_directory": "~/.catalog/gaia_mag18_v2_multifile/",
-    "max_cached_chunks": 100
+    "catalog_path": "~/.catalog/gaia_mag18_v2_multifile",
+    "enable_iau_names": true,
+    "cache_size_mb": 512
 }
 ```
 
-#### Per Catalogo Compresso
+#### Compressed V2 (alternativa)
 ```json
 {
     "catalog_type": "compressed_v2",
-    "compressed_file_path": "~/.catalog/gaia_mag18_v2.mag18v2"
+    "catalog_path": "~/.catalog/gaia_mag18_v2.mag18v2",
+    "enable_iau_names": true
 }
 ```
 
-#### Per Catalogo Multifile V2
-```json
-{
-    "catalog_type": "multifile_v2", 
-    "multifile_directory": "~/.catalog/gaia_mag18_v2_multifile/",
-    "max_cached_chunks": 100
-}
-```
-
-#### Per Solo Online
+#### Online ESA (solo per test)
 ```json
 {
     "catalog_type": "online_esa",
@@ -159,28 +192,52 @@ for (const auto& star : stars) {
 }
 ```
 
+---
+
 ### ❗ Note Importanti
 
-1. **File V2 non supportati**: I nuovi cataloghi usano formati diversi
-2. **Percorsi diversi**: Aggiorna i percorsi nei file di configurazione  
-3. **Testing**: Testa accuratamente dopo la migrazione
+1. **Usa sempre Multifile V2**: È 35-500x più veloce del catalogo compresso
+2. **Path dinamici**: Usa `getenv("HOME")` invece di path hardcoded
+3. **enable_iau_names**: Attiva i nomi ufficiali IAU per queryByName()
 4. **Backward compatibility**: Le API V2 funzionano ancora ma sono deprecate
+
+---
 
 ### 🆘 Risoluzione Problemi
 
-**Errore: "cerca di aprire catalogo v2"**
-- ✅ Aggiorna gli include alle nuove API
-- ✅ Cambia percorsi da `.mag18v2` a `.gz` 
-- ✅ Usa `UnifiedGaiaCatalog` invece di `Mag18CatalogV2`
+**Errore: "Catalog not initialized"**
+```cpp
+// ✅ Soluzione: Chiama initialize() prima di getInstance()
+UnifiedGaiaCatalog::initialize(config);
+auto& catalog = UnifiedGaiaCatalog::getInstance();
+```
 
-**Errore: "file non trovato"**  
-- ✅ Verifica il nuovo percorso del catalogo
-- ✅ Usa configurazione JSON per specificare i percorsi
+**Errore: "Catalog path not found"**
+```cpp
+// ✅ Soluzione: Verifica che il path esista
+std::string home = std::getenv("HOME");
+std::string path = home + "/.catalog/gaia_mag18_v2_multifile";
+// Verifica: ls -la ~/.catalog/gaia_mag18_v2_multifile/
+```
 
-**Performance peggiori**
-- ✅ La migrazione migliora le performance grazie alla selezione automatica
-- ✅ Configura correttamente il tipo di catalogo per il tuo uso
+**queryByName() restituisce nullptr**
+```cpp
+// ✅ Soluzione: Assicurati che enable_iau_names sia true
+"enable_iau_names": true
+```
+
+**Performance lente**
+```cpp
+// ✅ Soluzione: Usa multifile_v2 invece di compressed_v2
+"catalog_type": "multifile_v2"  // ⭐ 0.001-18ms
+// NON: "catalog_type": "compressed_v2"  // 500ms
+```
+
+---
 
 ### 📞 Supporto
 
-Per domande sulla migrazione, consulta gli esempi in `examples/migration_guide.cpp` e `examples/unified_api_demo.cpp`.
+Per esempi completi, consulta:
+- `examples/unified_api_demo.cpp` - Demo API unificata
+- `examples/complete_performance_benchmark.cpp` - Benchmark performance
+- `examples/iau_names_demo.cpp` - Demo nomi IAU
