@@ -16,6 +16,7 @@ namespace gaia {
 
 /**
  * @brief Gaia Mag18 Catalog V2 - Optimized version with HEALPix spatial index
+ * @deprecated Use UnifiedGaiaCatalog with "compressed_v2" configuration instead.
  * 
  * Major improvements over V1:
  * - HEALPix NSIDE=64 spatial index for 100-300x faster cone searches
@@ -127,8 +128,9 @@ struct Mag18CatalogHeaderV2 {
 
 /**
  * @brief Gaia Mag18 Catalog V2 Reader with spatial indexing
+ * @deprecated Use UnifiedGaiaCatalog with "compressed_v2" configuration instead.
  */
-class Mag18CatalogV2 {
+class [[deprecated("Use UnifiedGaiaCatalog instead")]] Mag18CatalogV2 {
 public:
     Mag18CatalogV2();
     explicit Mag18CatalogV2(const std::string& catalog_path);

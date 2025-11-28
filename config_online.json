@@ -1,0 +1,5 @@
+{
+        "catalog_type": "online_esa",
+        "timeout_seconds": "30",
+        "log_level": "info"
+    }

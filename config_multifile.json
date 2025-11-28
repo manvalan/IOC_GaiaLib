@@ -1,0 +1,6 @@
+{
+        "catalog_type": "multifile_v2",
+        "multifile_directory": "/Users/michelebigi/.catalog/gaia_mag18_v2_multifile",
+        "max_cached_chunks": "100",
+        "log_level": "info"
+    }

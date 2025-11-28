@@ -2,6 +2,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cmath>
+#include <vector>
 
 namespace ioc {
 namespace gaia {
@@ -49,9 +50,46 @@ double GaiaStar::getBpRpColor() const {
 }
 
 std::string GaiaStar::getDesignation() const {
-    std::ostringstream oss;
-    oss << "Gaia DR3 " << source_id;
-    return oss.str();
+    std::ostringstream ss;
+    ss << "Gaia DR3 " << source_id;
+    return ss.str();
+}
+
+std::string GaiaStar::getAllDesignations() const {
+    std::vector<std::string> designations;
+    
+    // Add Gaia designation (always present)
+    designations.push_back("Gaia DR3 " + std::to_string(source_id));
+    
+    // Add other catalog designations if available
+    if (!sao_designation.empty()) {
+        designations.push_back("SAO " + sao_designation);
+    }
+    
+    if (!tycho2_designation.empty()) {
+        designations.push_back("TYC " + tycho2_designation);
+    }
+    
+    if (!hd_designation.empty()) {
+        designations.push_back("HD " + hd_designation);
+    }
+    
+    if (!hip_designation.empty()) {
+        designations.push_back("HIP " + hip_designation);
+    }
+    
+    if (!common_name.empty()) {
+        designations.push_back(common_name);
+    }
+    
+    // Join all designations with " | "
+    std::string result;
+    for (size_t i = 0; i < designations.size(); ++i) {
+        if (i > 0) result += " | ";
+        result += designations[i];
+    }
+    
+    return result;
 }
 
 // =============================================================================

@@ -48,6 +48,13 @@ struct GaiaStar {
     int visibility_periods_used;
     double ruwe;                 ///< Renormalized Unit Weight Error
     
+    // Cross-match identifiers
+    std::string sao_designation;     ///< SAO catalog designation
+    std::string tycho2_designation;  ///< Tycho-2 catalog designation  
+    std::string hd_designation;      ///< Henry Draper catalog designation
+    std::string hip_designation;     ///< Hipparcos catalog designation
+    std::string common_name;         ///< Common star name (if available)
+    
     // Constructor
     GaiaStar();
     
@@ -55,6 +62,7 @@ struct GaiaStar {
     bool isValid() const;
     double getBpRpColor() const;
     std::string getDesignation() const;
+    std::string getAllDesignations() const;  ///< Get all available designations
 };
 
 /**

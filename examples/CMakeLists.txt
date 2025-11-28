@@ -76,6 +76,78 @@ target_link_libraries(test_v2_minimal PRIVATE ioc_gaialib)
 add_executable(test_v2_io test_v2_io.cpp)
 target_link_libraries(test_v2_io PRIVATE ioc_gaialib)
 
+add_executable(profile_v2_load profile_v2_load.cpp)
+target_link_libraries(profile_v2_load PRIVATE ioc_gaialib)
+
+add_executable(test_v2_lazyload test_v2_lazyload.cpp)
+target_link_libraries(test_v2_lazyload PRIVATE ioc_gaialib)
+
+add_executable(simple_v2_test simple_v2_test.cpp)
+target_link_libraries(simple_v2_test PRIVATE ioc_gaialib)
+
+add_executable(test_v2_complete test_v2_complete.cpp)
+target_link_libraries(test_v2_complete PRIVATE ioc_gaialib)
+
+add_executable(decompress_v2_catalog decompress_v2_catalog.cpp)
+target_link_libraries(decompress_v2_catalog PRIVATE ioc_gaialib)
+
+add_executable(test_uncompressed_v2 test_uncompressed_v2.cpp)
+target_link_libraries(test_uncompressed_v2 PRIVATE ioc_gaialib)
+
+add_executable(timing_test_compressed timing_test_compressed.cpp)
+target_link_libraries(timing_test_compressed PRIVATE ioc_gaialib)
+
+add_executable(test_v2_interface_complete test_v2_interface_complete.cpp)
+target_link_libraries(test_v2_interface_complete PRIVATE ioc_gaialib)
+
+add_executable(test_cache_performance test_cache_performance.cpp)
+target_link_libraries(test_cache_performance PRIVATE ioc_gaialib)
+
+add_executable(create_multifile_v2 create_multifile_v2.cpp)
+target_link_libraries(create_multifile_v2 PRIVATE ioc_gaialib)
+
+add_executable(create_smart_multifile_v2 create_smart_multifile_v2.cpp)
+target_link_libraries(create_smart_multifile_v2 PRIVATE ioc_gaialib)
+
+add_executable(test_multifile_performance test_multifile_performance.cpp)
+target_link_libraries(test_multifile_performance PRIVATE ioc_gaialib)
+
+add_executable(debug_multifile debug_multifile.cpp)
+target_link_libraries(debug_multifile PRIVATE ioc_gaialib)
+
+add_executable(raw_chunk_test raw_chunk_test.cpp)
+target_link_libraries(raw_chunk_test PRIVATE ioc_gaialib)
+
+add_executable(targeted_search_test targeted_search_test.cpp)
+target_link_libraries(targeted_search_test PRIVATE ioc_gaialib)
+
+add_executable(final_validation final_validation.cpp)
+target_link_libraries(final_validation PRIVATE ioc_gaialib)
+
+add_executable(concurrency_test concurrency_test.cpp)
+target_link_libraries(concurrency_test PRIVATE ioc_gaialib)
+find_package(Threads REQUIRED)
+target_link_libraries(concurrency_test PRIVATE Threads::Threads)
+
+add_executable(concurrent_comparison concurrent_comparison.cpp)
+target_link_libraries(concurrent_comparison PRIVATE ioc_gaialib)
+target_link_libraries(concurrent_comparison PRIVATE Threads::Threads)
+
+add_executable(unified_api_demo unified_api_demo.cpp)
+target_link_libraries(unified_api_demo PRIVATE ioc_gaialib)
+
+add_executable(migration_guide migration_guide.cpp)
+target_link_libraries(migration_guide PRIVATE ioc_gaialib)
+
+add_executable(cross_match_demo cross_match_demo.cpp)
+target_link_libraries(cross_match_demo PRIVATE ioc_gaialib)
+
+add_executable(deprecation_test deprecation_test.cpp)
+target_link_libraries(deprecation_test PRIVATE ioc_gaialib)
+
+add_executable(test_crossmatch test_crossmatch.cpp)
+target_link_libraries(test_crossmatch PRIVATE ioc_gaialib)
+
 # Install examples
 install(TARGETS simple_test integration_test real_data_test compile_catalog test_catalog_query quick_catalog_test test_mag17 test_grappa test_local_catalog
     RUNTIME DESTINATION bin

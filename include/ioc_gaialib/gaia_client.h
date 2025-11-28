@@ -15,6 +15,7 @@ class QueryBuilder;
 
 /**
  * GaiaClient - Main interface for querying the Gaia catalog via TAP/ADQL
+ * @deprecated Use UnifiedGaiaCatalog with "online_esa" configuration instead.
  * 
  * Provides high-level methods for common queries (cone, box, ADQL) with
  * automatic rate limiting, error handling, and retry logic.
@@ -28,7 +29,7 @@ class QueryBuilder;
  *   }
  * @endcode
  */
-class GaiaClient {
+class [[deprecated("Use UnifiedGaiaCatalog instead")]] GaiaClient {
 public:
     /**
      * Construct a Gaia client for the specified data release
