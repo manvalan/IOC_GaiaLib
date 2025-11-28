@@ -34,19 +34,33 @@ add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE IOC_GaiaLib::ioc_gaialib)
 ```
 
-**main.cpp:**
+**main.cpp (using Mag18 V2 - Fast Offline Catalog):**
 ```cpp
 #include <ioc_gaialib/gaia_mag18_catalog_v2.h>
 
 int main() {
-    ioc::gaia::Mag18CatalogV2 catalog("gaia_mag18_v2.mag18v2");
-    auto stars = catalog.queryCone(180.0, 0.0, 5.0);  // RA, Dec, radius
+    ioc::gaia::Mag18CatalogV2 catalog("~/.catalog/gaia_mag18_v2.mag18v2");
+    
+    // Statistics
+    std::cout << "Stars: " << catalog.getTotalStars() << "\n";
+    
+    // Cone search (50ms for 5° region)
+    auto stars = catalog.queryCone(180.0, 0.0, 5.0);
     std::cout << "Found " << stars.size() << " stars\n";
+    
+    // Magnitude filter
+    auto bright = catalog.queryConeWithMagnitude(180.0, 0.0, 5.0, 10.0, 12.0);
+    std::cout << "Bright: " << bright.size() << " stars\n";
+    
+    // Parallel queries
+    catalog.setParallelProcessing(true, 4);
+    auto result = catalog.queryBrightest(180.0, 0.0, 5.0, 10);
+    
     return 0;
 }
 ```
 
-📖 **[Complete Integration Guide →](docs/INTEGRATION_GUIDE.md)**
+📖 **[V2 Catalog Quick Start →](docs/MAG18_V2_QUICK_START.md)** | **[Complete Integration Guide →](docs/INTEGRATION_GUIDE.md)**
 
 ---
 
@@ -71,13 +85,16 @@ int main() {
   - Binary format optimized for fast queries
   
 - ⚡ **Mag18 V2 Catalog** - High-performance compressed catalog for G ≤ 18 stars
-  - **303 million stars** in 14 GB (vs 146 GB full catalog)
+  - **231 million stars** in 9.2 GB compressed (installed at ~/.catalog/)
   - **HEALPix spatial index** (NSIDE=64) for 100-300x faster cone searches
-  - **Chunk compression** (1M records/chunk) for 5x faster access
-  - **Extended 80-byte records** with proper motion, errors, RUWE
-  - Cone search: **50 ms** (vs 15 sec in V1)
+  - **Chunk compression** (1M records/chunk) for minimal memory usage
+  - **Extended 80-byte records** with proper motion, errors, quality metrics
+  - Cone search 0.5°: **50 ms** (vs 15 sec in V1 — 300x faster)
+  - Cone search 5°: **500 ms** (vs 48 sec in V1 — 96x faster)
   - Source_id query: **<1 ms** (binary search)
   - **Production-ready** for 95% of astronomical use cases
+  - **Thread-safe** with OpenMP parallelization support
+  - **Minimal RAM**: ~330 MB regardless of query size
   
 - 🆕 **GRAPPA3E Integration** - Asteroid catalog from IMCCE
   - Query asteroids by Gaia source_id, number, or designation

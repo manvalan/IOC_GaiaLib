@@ -64,6 +64,18 @@ target_link_libraries(test_openmp_quick PRIVATE ioc_gaialib)
 add_executable(use_v1_catalog use_v1_catalog.cpp)
 target_link_libraries(use_v1_catalog PRIVATE ioc_gaialib)
 
+add_executable(validate_v2_interface validate_v2_interface.cpp)
+target_link_libraries(validate_v2_interface PRIVATE ioc_gaialib)
+
+add_executable(quick_v2_test quick_v2_test.cpp)
+target_link_libraries(quick_v2_test PRIVATE ioc_gaialib)
+
+add_executable(test_v2_minimal test_v2_minimal.cpp)
+target_link_libraries(test_v2_minimal PRIVATE ioc_gaialib)
+
+add_executable(test_v2_io test_v2_io.cpp)
+target_link_libraries(test_v2_io PRIVATE ioc_gaialib)
+
 # Install examples
 install(TARGETS simple_test integration_test real_data_test compile_catalog test_catalog_query quick_catalog_test test_mag17 test_grappa test_local_catalog
     RUNTIME DESTINATION bin
