@@ -49,7 +49,7 @@ auto sirius = catalog.queryByName("Sirius");
 
 GaiaCatalogConfig config;
 config.mag18_catalog_path = "/path/to/new_catalog.gz";
-config.grappa_catalog_path = "/path/to/grappa/";
+config.multifile_catalog_path = "/path/to/multifile_v2/";
 config.enable_online_fallback = true;
 
 GaiaCatalog catalog(config);
@@ -65,7 +65,7 @@ auto bright = catalog.queryBrightest(180, 0, 5, 10); // Top 10 brightest
 | Formato Vecchio | Formato Nuovo | Descrizione |
 |-----------------|---------------|-------------|
 | `*.mag18v2` | `*.gz` (GaiaMag18Catalog) | Catalogo compresso mag≤18 |
-| `multifile_v2/` | GRAPPA3E directory | Catalogo completo locale |
+| `multifile_v2/` | Gaia Multifile V2 directory | Catalogo multifile locale |
 | Online V2 | Unified online | Query ESA automatiche |
 
 ### 🔄 Migrazione Step-by-Step
@@ -118,27 +118,35 @@ for (const auto& star : stars) {
 ### 🚀 Vantaggi della Migrazione
 
 1. **Nomi Stelle**: Integrazione IAU automatica (451 stelle ufficiali)
-2. **Performance**: Selezione automatica del catalogo ottimale  
+2. **Performance**: Multifile V2 - cone search in 0.000-17ms  
 3. **Cross-match**: HD, HIP, Bayer, Flamsteed automatici
-4. **Online Fallback**: Query ESA automatiche se mancano dati
+4. **Cache intelligente**: Gestione automatica dei chunk
 5. **Future-proof**: API stabile per versioni future
 
 ### 🔧 Configurazioni Esempio
 
-#### Per Catalogo Locale Compresso
-```json
-{
-    "catalog_type": "compressed_v2",
-    "compressed_file_path": "~/catalogs/gaia_mag18_new.gz",
-    "timeout_seconds": 10  
-}
-```
-
-#### Per Catalogo Completo GRAPPA3E
+#### Per Catalogo Locale Multifile V2 (Raccomandato)
 ```json
 {
     "catalog_type": "multifile_v2", 
-    "multifile_directory": "~/catalogs/grappa3e/",
+    "multifile_directory": "~/.catalog/gaia_mag18_v2_multifile/",
+    "max_cached_chunks": 100
+}
+```
+
+#### Per Catalogo Compresso
+```json
+{
+    "catalog_type": "compressed_v2",
+    "compressed_file_path": "~/.catalog/gaia_mag18_v2.mag18v2"
+}
+```
+
+#### Per Catalogo Multifile V2
+```json
+{
+    "catalog_type": "multifile_v2", 
+    "multifile_directory": "~/.catalog/gaia_mag18_v2_multifile/",
     "max_cached_chunks": 100
 }
 ```
