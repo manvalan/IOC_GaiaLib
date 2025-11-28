@@ -10,6 +10,9 @@
 #include <chrono>
 #include <algorithm>
 #include <atomic>
+#include <set>
+#include <cmath>
+#include <limits>
 
 namespace ioc::gaia {
 
@@ -521,6 +524,202 @@ std::optional<GaiaStar> UnifiedGaiaCatalog::queryByName(const std::string& commo
         throw std::runtime_error("Catalog not initialized");
     }
     return pimpl_->queryByCatalogDesignation("NAME", common_name);
+}
+
+// =============================================================================
+// Corridor Query Implementation
+// =============================================================================
+
+namespace {
+    // Calculate distance from a point to a line segment on a sphere
+    // Uses the cross-track distance formula
+    double pointToSegmentDistance(double point_ra, double point_dec,
+                                   double seg_start_ra, double seg_start_dec,
+                                   double seg_end_ra, double seg_end_dec) {
+        constexpr double DEG_TO_RAD = M_PI / 180.0;
+        
+        // Convert to radians
+        double p_ra = point_ra * DEG_TO_RAD;
+        double p_dec = point_dec * DEG_TO_RAD;
+        double s_ra = seg_start_ra * DEG_TO_RAD;
+        double s_dec = seg_start_dec * DEG_TO_RAD;
+        double e_ra = seg_end_ra * DEG_TO_RAD;
+        double e_dec = seg_end_dec * DEG_TO_RAD;
+        
+        // Angular distance from start to point
+        double d_sp = std::acos(
+            std::sin(s_dec) * std::sin(p_dec) +
+            std::cos(s_dec) * std::cos(p_dec) * std::cos(p_ra - s_ra)
+        );
+        
+        // Angular distance from start to end
+        double d_se = std::acos(
+            std::sin(s_dec) * std::sin(e_dec) +
+            std::cos(s_dec) * std::cos(e_dec) * std::cos(e_ra - s_ra)
+        );
+        
+        // If segment has zero length, return distance to start point
+        if (d_se < 1e-10) {
+            return d_sp / DEG_TO_RAD;
+        }
+        
+        // Bearing from start to end
+        double theta_se = std::atan2(
+            std::sin(e_ra - s_ra) * std::cos(e_dec),
+            std::cos(s_dec) * std::sin(e_dec) - std::sin(s_dec) * std::cos(e_dec) * std::cos(e_ra - s_ra)
+        );
+        
+        // Bearing from start to point
+        double theta_sp = std::atan2(
+            std::sin(p_ra - s_ra) * std::cos(p_dec),
+            std::cos(s_dec) * std::sin(p_dec) - std::sin(s_dec) * std::cos(p_dec) * std::cos(p_ra - s_ra)
+        );
+        
+        // Cross-track distance (perpendicular distance to great circle)
+        double dxt = std::asin(std::sin(d_sp) * std::sin(theta_sp - theta_se));
+        
+        // Along-track distance (how far along the segment)
+        double dat = std::acos(std::cos(d_sp) / std::cos(dxt));
+        
+        // Check if the closest point is within the segment
+        if (dat > d_se) {
+            // Closest point is past the end - return distance to end
+            double d_pe = std::acos(
+                std::sin(e_dec) * std::sin(p_dec) +
+                std::cos(e_dec) * std::cos(p_dec) * std::cos(p_ra - e_ra)
+            );
+            return d_pe / DEG_TO_RAD;
+        } else if (dat < 0 || std::cos(theta_sp - theta_se) < 0) {
+            // Closest point is before the start - return distance to start
+            return d_sp / DEG_TO_RAD;
+        }
+        
+        // Return cross-track distance
+        return std::abs(dxt) / DEG_TO_RAD;
+    }
+    
+    // Calculate minimum distance from a point to a polyline
+    double pointToPolylineDistance(double ra, double dec, 
+                                    const std::vector<CelestialPoint>& path) {
+        double min_dist = std::numeric_limits<double>::max();
+        
+        for (size_t i = 0; i + 1 < path.size(); ++i) {
+            double dist = pointToSegmentDistance(
+                ra, dec,
+                path[i].ra, path[i].dec,
+                path[i+1].ra, path[i+1].dec
+            );
+            min_dist = std::min(min_dist, dist);
+        }
+        
+        return min_dist;
+    }
+}
+
+std::vector<GaiaStar> UnifiedGaiaCatalog::queryCorridor(const CorridorQueryParams& params) const {
+    if (!pimpl_) {
+        throw std::runtime_error("Catalog not initialized");
+    }
+    
+    if (!params.isValid()) {
+        throw std::runtime_error("Invalid corridor query parameters");
+    }
+    
+    std::vector<GaiaStar> results;
+    std::set<uint64_t> seen_source_ids;  // Avoid duplicates
+    
+    // Query a cone around each waypoint and each segment midpoint
+    // This ensures we cover the entire corridor
+    for (size_t i = 0; i < params.path.size(); ++i) {
+        QueryParams cone_params;
+        cone_params.ra_center = params.path[i].ra;
+        cone_params.dec_center = params.path[i].dec;
+        cone_params.radius = params.width * 2;  // Search wider to catch all stars
+        cone_params.max_magnitude = params.max_magnitude;
+        cone_params.min_parallax = params.min_parallax;
+        
+        auto cone_results = pimpl_->performQuery(cone_params);
+        
+        // Filter by actual distance to corridor
+        for (const auto& star : cone_results) {
+            if (seen_source_ids.count(star.source_id) > 0) continue;
+            
+            double dist = pointToPolylineDistance(star.ra, star.dec, params.path);
+            if (dist <= params.width) {
+                seen_source_ids.insert(star.source_id);
+                results.push_back(star);
+                
+                if (params.max_results > 0 && results.size() >= params.max_results) {
+                    return results;
+                }
+            }
+        }
+    }
+    
+    // Also query along segment midpoints for longer segments
+    for (size_t i = 0; i + 1 < params.path.size(); ++i) {
+        double segment_length = std::sqrt(
+            std::pow(params.path[i+1].ra - params.path[i].ra, 2) +
+            std::pow(params.path[i+1].dec - params.path[i].dec, 2)
+        );
+        
+        // Add intermediate points for segments longer than width
+        int num_points = static_cast<int>(segment_length / params.width) + 1;
+        for (int j = 1; j < num_points; ++j) {
+            double t = static_cast<double>(j) / num_points;
+            double mid_ra = params.path[i].ra + t * (params.path[i+1].ra - params.path[i].ra);
+            double mid_dec = params.path[i].dec + t * (params.path[i+1].dec - params.path[i].dec);
+            
+            QueryParams cone_params;
+            cone_params.ra_center = mid_ra;
+            cone_params.dec_center = mid_dec;
+            cone_params.radius = params.width * 2;
+            cone_params.max_magnitude = params.max_magnitude;
+            cone_params.min_parallax = params.min_parallax;
+            
+            auto cone_results = pimpl_->performQuery(cone_params);
+            
+            for (const auto& star : cone_results) {
+                if (seen_source_ids.count(star.source_id) > 0) continue;
+                
+                double dist = pointToPolylineDistance(star.ra, star.dec, params.path);
+                if (dist <= params.width) {
+                    seen_source_ids.insert(star.source_id);
+                    results.push_back(star);
+                    
+                    if (params.max_results > 0 && results.size() >= params.max_results) {
+                        return results;
+                    }
+                }
+            }
+        }
+    }
+    
+    return results;
+}
+
+std::vector<GaiaStar> UnifiedGaiaCatalog::queryCorridorJSON(const std::string& json_config) const {
+    CorridorQueryParams params = CorridorQueryParams::fromJSON(json_config);
+    return queryCorridor(params);
+}
+
+std::future<std::vector<GaiaStar>> UnifiedGaiaCatalog::queryCorridorAsync(
+    const CorridorQueryParams& params,
+    ProgressCallback progress_callback
+) const {
+    return std::async(std::launch::async, [this, params, progress_callback]() {
+        if (progress_callback) {
+            progress_callback(0, "Starting corridor query...");
+        }
+        
+        auto result = queryCorridor(params);
+        
+        if (progress_callback) {
+            progress_callback(100, "Corridor query completed");
+        }
+        
+        return result;
+    });
 }
 
 CatalogStats UnifiedGaiaCatalog::getStatistics() const {

@@ -126,6 +126,66 @@ struct BoxRegion {
 };
 
 /**
+ * A point on the celestial sphere (for corridor/polyline queries)
+ */
+struct CelestialPoint {
+    double ra;                   ///< Right Ascension [degrees]
+    double dec;                  ///< Declination [degrees]
+    
+    CelestialPoint() : ra(0.0), dec(0.0) {}
+    CelestialPoint(double ra_, double dec_) : ra(ra_), dec(dec_) {}
+};
+
+/**
+ * Parameters for corridor/polyline query
+ * Searches for stars within a specified width along a path defined by multiple points
+ */
+struct CorridorQueryParams {
+    std::vector<CelestialPoint> path;  ///< Path defined by ordered points (at least 2)
+    double width;                       ///< Corridor half-width [degrees] (total width = 2 * width)
+    double max_magnitude;               ///< Maximum G magnitude
+    double min_parallax;                ///< Minimum parallax [mas], -1 = no limit
+    size_t max_results;                 ///< Maximum results (0 = no limit)
+    
+    CorridorQueryParams() 
+        : width(0.5), max_magnitude(20.0), min_parallax(-1.0), max_results(0) {}
+    
+    /**
+     * Parse corridor query from JSON string
+     * Format:
+     * {
+     *   "path": [
+     *     {"ra": 0.0, "dec": 0.0},
+     *     {"ra": 10.0, "dec": 5.0},
+     *     {"ra": 20.0, "dec": 10.0}
+     *   ],
+     *   "width": 0.5,
+     *   "max_magnitude": 18.0,
+     *   "min_parallax": -1,
+     *   "max_results": 0
+     * }
+     */
+    static CorridorQueryParams fromJSON(const std::string& json);
+    
+    /**
+     * Serialize to JSON string
+     */
+    std::string toJSON() const;
+    
+    /**
+     * Validate parameters
+     */
+    bool isValid() const {
+        return path.size() >= 2 && width > 0 && max_magnitude > 0;
+    }
+    
+    /**
+     * Get total path length in degrees (approximate great circle)
+     */
+    double getPathLength() const;
+};
+
+/**
  * Cache statistics
  */
 struct CacheStats {

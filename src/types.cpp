@@ -209,5 +209,157 @@ bool isValidBoxRegion(const BoxRegion& box) {
     return true;
 }
 
+// =============================================================================
+// CorridorQueryParams Implementation
+// =============================================================================
+
+namespace {
+    // Simple JSON parser for corridor queries
+    std::string extractValue(const std::string& json, const std::string& key) {
+        size_t pos = json.find("\"" + key + "\"");
+        if (pos == std::string::npos) return "";
+        
+        pos = json.find(":", pos);
+        if (pos == std::string::npos) return "";
+        
+        // Skip whitespace
+        pos++;
+        while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\n')) pos++;
+        
+        if (pos >= json.size()) return "";
+        
+        // Handle string value
+        if (json[pos] == '"') {
+            pos++;
+            size_t end = json.find("\"", pos);
+            if (end == std::string::npos) return "";
+            return json.substr(pos, end - pos);
+        }
+        
+        // Handle number value
+        size_t end = pos;
+        while (end < json.size() && (std::isdigit(json[end]) || json[end] == '.' || json[end] == '-' || json[end] == '+' || json[end] == 'e' || json[end] == 'E')) {
+            end++;
+        }
+        return json.substr(pos, end - pos);
+    }
+    
+    std::vector<CelestialPoint> extractPath(const std::string& json) {
+        std::vector<CelestialPoint> path;
+        
+        size_t pos = json.find("\"path\"");
+        if (pos == std::string::npos) return path;
+        
+        pos = json.find("[", pos);
+        if (pos == std::string::npos) return path;
+        
+        size_t end = json.find("]", pos);
+        if (end == std::string::npos) return path;
+        
+        std::string path_str = json.substr(pos, end - pos + 1);
+        
+        // Parse each point object
+        size_t obj_start = 0;
+        while ((obj_start = path_str.find("{", obj_start)) != std::string::npos) {
+            size_t obj_end = path_str.find("}", obj_start);
+            if (obj_end == std::string::npos) break;
+            
+            std::string obj = path_str.substr(obj_start, obj_end - obj_start + 1);
+            
+            std::string ra_str = extractValue(obj, "ra");
+            std::string dec_str = extractValue(obj, "dec");
+            
+            if (!ra_str.empty() && !dec_str.empty()) {
+                CelestialPoint pt;
+                pt.ra = std::stod(ra_str);
+                pt.dec = std::stod(dec_str);
+                path.push_back(pt);
+            }
+            
+            obj_start = obj_end + 1;
+        }
+        
+        return path;
+    }
+    
+    double angularDistancePoints(double ra1, double dec1, double ra2, double dec2) {
+        constexpr double DEG_TO_RAD = M_PI / 180.0;
+        
+        double dra = (ra2 - ra1) * DEG_TO_RAD;
+        double ddec = (dec2 - dec1) * DEG_TO_RAD;
+        
+        double a = std::sin(ddec / 2.0) * std::sin(ddec / 2.0) +
+                   std::cos(dec1 * DEG_TO_RAD) * std::cos(dec2 * DEG_TO_RAD) *
+                   std::sin(dra / 2.0) * std::sin(dra / 2.0);
+        
+        double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+        
+        return c / DEG_TO_RAD;
+    }
+}
+
+CorridorQueryParams CorridorQueryParams::fromJSON(const std::string& json) {
+    CorridorQueryParams params;
+    
+    // Parse path
+    params.path = extractPath(json);
+    
+    // Parse width
+    std::string width_str = extractValue(json, "width");
+    if (!width_str.empty()) {
+        params.width = std::stod(width_str);
+    }
+    
+    // Parse max_magnitude
+    std::string mag_str = extractValue(json, "max_magnitude");
+    if (!mag_str.empty()) {
+        params.max_magnitude = std::stod(mag_str);
+    }
+    
+    // Parse min_parallax
+    std::string parallax_str = extractValue(json, "min_parallax");
+    if (!parallax_str.empty()) {
+        params.min_parallax = std::stod(parallax_str);
+    }
+    
+    // Parse max_results
+    std::string results_str = extractValue(json, "max_results");
+    if (!results_str.empty()) {
+        params.max_results = std::stoull(results_str);
+    }
+    
+    return params;
+}
+
+std::string CorridorQueryParams::toJSON() const {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(6);
+    
+    ss << "{\n";
+    ss << "  \"path\": [\n";
+    for (size_t i = 0; i < path.size(); ++i) {
+        ss << "    {\"ra\": " << path[i].ra << ", \"dec\": " << path[i].dec << "}";
+        if (i < path.size() - 1) ss << ",";
+        ss << "\n";
+    }
+    ss << "  ],\n";
+    ss << "  \"width\": " << width << ",\n";
+    ss << "  \"max_magnitude\": " << max_magnitude << ",\n";
+    ss << "  \"min_parallax\": " << min_parallax << ",\n";
+    ss << "  \"max_results\": " << max_results << "\n";
+    ss << "}";
+    
+    return ss.str();
+}
+
+double CorridorQueryParams::getPathLength() const {
+    double length = 0.0;
+    for (size_t i = 1; i < path.size(); ++i) {
+        length += angularDistancePoints(path[i-1].ra, path[i-1].dec, 
+                                        path[i].ra, path[i].dec);
+    }
+    return length;
+}
+
 } // namespace gaia
 } // namespace ioc

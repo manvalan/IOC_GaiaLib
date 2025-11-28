@@ -121,7 +121,7 @@ int main() {
 
 ### Query Parameters
 
-The `QueryParams` struct from `types.h` is used for all queries:
+The `QueryParams` struct from `types.h` is used for cone queries:
 
 ```cpp
 struct QueryParams {
@@ -131,6 +131,45 @@ struct QueryParams {
     double max_magnitude;  // Maximum G magnitude
     double min_parallax;   // Minimum parallax (mas), -1 = no limit
 };
+```
+
+### Corridor Query Parameters
+
+The `CorridorQueryParams` struct is used for corridor/polyline queries:
+
+```cpp
+struct CelestialPoint {
+    double ra;   // Right Ascension (degrees)
+    double dec;  // Declination (degrees)
+};
+
+struct CorridorQueryParams {
+    std::vector<CelestialPoint> path;  // Path points (at least 2)
+    double width;                       // Corridor half-width (degrees)
+    double max_magnitude;               // Maximum G magnitude
+    double min_parallax;                // Minimum parallax (mas), -1 = no limit
+    size_t max_results;                 // Max results (0 = no limit)
+    
+    static CorridorQueryParams fromJSON(const std::string& json);
+    std::string toJSON() const;
+    bool isValid() const;
+    double getPathLength() const;  // Total path length in degrees
+};
+```
+
+**JSON Format for Corridor Query:**
+```json
+{
+    "path": [
+        {"ra": 73.0, "dec": 20.0},
+        {"ra": 75.0, "dec": 22.0},
+        {"ra": 77.0, "dec": 20.0}
+    ],
+    "width": 0.5,
+    "max_magnitude": 16.0,
+    "min_parallax": 0.0,
+    "max_results": 5000
+}
 ```
 
 ### Core Methods
@@ -160,6 +199,18 @@ std::vector<std::vector<GaiaStar>> batchQuery(
 
 // Query by source ID
 std::optional<GaiaStar> queryBySourceId(uint64_t source_id) const;
+
+// Corridor/polyline query - find stars along a path
+std::vector<GaiaStar> queryCorridor(const CorridorQueryParams& params) const;
+
+// Corridor query with JSON input
+std::vector<GaiaStar> queryCorridorJSON(const std::string& json_params) const;
+
+// Async corridor query
+std::future<std::vector<GaiaStar>> queryCorridorAsync(
+    const CorridorQueryParams& params,
+    ProgressCallback progress_callback = nullptr
+) const;
 ```
 
 #### Monitoring and Control
@@ -305,6 +356,63 @@ for (int i = 0; i < 10; i++) {
 auto results = catalog.batchQuery(queries);
 // results[i] contains stars for queries[i]
 ```
+
+## 🛤️ Corridor Query
+
+Find all stars along a path/polyline with specified width. Useful for:
+- Occultation path predictions
+- Satellite ground tracks
+- Ecliptic crossings
+- Custom sky sweeps
+
+### Using CorridorQueryParams
+
+```cpp
+CorridorQueryParams params;
+params.path = {
+    {73.0, 20.0},   // Start point (RA, Dec in degrees)
+    {75.0, 22.0},   // Middle point
+    {77.0, 20.0}    // End point
+};
+params.width = 0.5;           // Half-width in degrees (total = 1°)
+params.max_magnitude = 14.0;
+params.min_parallax = 0.0;
+params.max_results = 5000;
+
+auto stars = catalog.queryCorridor(params);
+std::cout << "Found " << stars.size() << " stars along the path\n";
+```
+
+### Using JSON Input
+
+```cpp
+std::string json = R"({
+    "path": [
+        {"ra": 73.0, "dec": 20.0},
+        {"ra": 75.0, "dec": 22.0},
+        {"ra": 77.0, "dec": 20.0}
+    ],
+    "width": 0.5,
+    "max_magnitude": 14.0,
+    "min_parallax": 0.0,
+    "max_results": 5000
+})";
+
+auto stars = catalog.queryCorridorJSON(json);
+```
+
+### Performance Tips
+
+| Path Length | Width | Expected Time | Notes |
+|-------------|-------|---------------|-------|
+| 2° | 0.2° | ~40 ms | Simple 2-point path |
+| 5° | 0.5° | ~100 ms | Medium corridor |
+| 10° | 0.3° | ~150 ms | Long corridor |
+| L-shaped | 0.15° | ~40 ms | Multi-segment path |
+
+- **Smaller widths** = faster queries (fewer overlapping regions)
+- **More path points** = more accurate corridor shape
+- Use `max_results` to limit large result sets
 
 ## 🎯 Best Practices
 

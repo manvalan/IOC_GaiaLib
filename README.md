@@ -81,6 +81,8 @@ int main() {
 | Cone 0.5° | **0.001 ms** | ~50 |
 | Cone 5° | **13 ms** | ~500 |
 | Cone 15° | **18 ms** | ~5,000 |
+| Corridor 5°×0.2° | **40 ms** | ~1,000 |
+| Corridor L-shape | **37 ms** | ~100-500 |
 | By source_id | **<1 ms** | 1 |
 | By name | **<0.1 ms** | 1 |
 
@@ -117,6 +119,8 @@ static void shutdown();
 
 // Queries
 std::vector<GaiaStar> queryCone(const QueryParams& params);
+std::vector<GaiaStar> queryCorridor(const CorridorQueryParams& params);
+std::vector<GaiaStar> queryCorridorJSON(const std::string& json_params);
 std::optional<GaiaStar> queryBySourceId(uint64_t source_id);
 std::optional<GaiaStar> queryByName(const std::string& name);
 std::optional<GaiaStar> queryByHD(const std::string& hd_number);
@@ -151,6 +155,37 @@ struct QueryParams {
     double max_magnitude;   // Maximum G magnitude (default: 20)
     double min_parallax;    // Minimum parallax [mas] (-1 = no limit)
 };
+```
+
+### CorridorQueryParams (Corridor Search)
+
+```cpp
+struct CorridorQueryParams {
+    std::vector<CelestialPoint> path;  // Path points (at least 2)
+    double width;                       // Corridor half-width [degrees]
+    double max_magnitude;               // Maximum G magnitude
+    double min_parallax;                // Minimum parallax [mas] (-1 = no limit)
+    size_t max_results;                 // Max results (0 = no limit)
+    
+    static CorridorQueryParams fromJSON(const std::string& json);
+    std::string toJSON() const;
+    bool isValid() const;
+    double getPathLength() const;
+};
+```
+
+**JSON format for corridor query:**
+```json
+{
+    "path": [
+        {"ra": 73.0, "dec": 20.0},
+        {"ra": 74.0, "dec": 21.0}
+    ],
+    "width": 0.5,
+    "max_magnitude": 15.0,
+    "min_parallax": 0.0,
+    "max_results": 1000
+}
 ```
 
 ### JSON Configuration

@@ -38,22 +38,33 @@ bool ConcurrentMultiFileCatalogV2::loadMetadata() {
         return false;
     }
     
-    // Read HEALPix index
-    healpix_index_.resize(header_.num_healpix_pixels);
-    file.read(reinterpret_cast<char*>(healpix_index_.data()), 
-              header_.num_healpix_pixels * sizeof(HEALPixIndexEntry));
+    // Read NEW format HEALPix index (PixelChunkEntry + chunk lists)
+    pixel_index_.resize(header_.num_healpix_pixels);
+    file.read(reinterpret_cast<char*>(pixel_index_.data()), 
+              header_.num_healpix_pixels * sizeof(PixelChunkEntry));
     
     if (!file) {
-        std::cerr << "Failed to read HEALPix index" << std::endl;
+        std::cerr << "Failed to read pixel index" << std::endl;
         return false;
     }
     
-    // Read chunk index  
-    chunk_index_.resize(header_.total_chunks);
-    file.read(reinterpret_cast<char*>(chunk_index_.data()), 
-              header_.total_chunks * sizeof(ChunkInfo));
+    // Calculate total chunk list entries
+    size_t total_chunk_entries = 0;
+    for (const auto& entry : pixel_index_) {
+        total_chunk_entries += entry.num_chunks;
+    }
     
-    return file.good();
+    // Read chunk lists
+    chunk_lists_.resize(total_chunk_entries);
+    file.read(reinterpret_cast<char*>(chunk_lists_.data()), 
+              total_chunk_entries * sizeof(uint32_t));
+    
+    if (!file) {
+        std::cerr << "Failed to read chunk lists" << std::endl;
+        return false;
+    }
+    
+    return true;
 }
 
 std::shared_ptr<ConcurrentMultiFileCatalogV2::ChunkData> 
@@ -131,10 +142,48 @@ ConcurrentMultiFileCatalogV2::loadChunk(uint64_t chunk_id) {
     return std::make_shared<ChunkData>(chunk_id, std::move(records));
 }
 
+std::set<uint32_t> ConcurrentMultiFileCatalogV2::getChunksForCone(double ra, double dec, double radius) const {
+    std::set<uint32_t> chunks;
+    
+    // Get all pixels that intersect the search cone
+    auto pixels = getPixelsInCone(ra, dec, radius);
+    
+    // For each pixel, find the chunks that contain stars in that pixel
+    for (uint32_t pixel : pixels) {
+        // Binary search in pixel_index_
+        auto it = std::lower_bound(pixel_index_.begin(), pixel_index_.end(), pixel,
+            [](const PixelChunkEntry& entry, uint32_t pix) {
+                return entry.pixel_id < pix;
+            });
+        
+        if (it != pixel_index_.end() && it->pixel_id == pixel) {
+            // Add all chunks for this pixel
+            uint64_t offset = it->chunk_list_offset;
+            for (uint32_t i = 0; i < it->num_chunks; ++i) {
+                if (offset + i < chunk_lists_.size()) {
+                    chunks.insert(chunk_lists_[offset + i]);
+                }
+            }
+        }
+    }
+    
+    return chunks;
+}
+
 std::vector<GaiaStar> ConcurrentMultiFileCatalogV2::queryCone(double ra, double dec, double radius, 
                                                               size_t max_results) {
     active_readers_++;
     std::vector<GaiaStar> results;
+    
+    // Use HEALPix index to find relevant chunks
+    auto relevant_chunks = getChunksForCone(ra, dec, radius);
+    
+    // If index is empty or not loaded, fall back to scanning all chunks
+    if (relevant_chunks.empty() && header_.total_chunks > 0) {
+        for (uint32_t i = 0; i < header_.total_chunks; ++i) {
+            relevant_chunks.insert(i);
+        }
+    }
     
     // Calculate Dec bounds for quick filtering
     const double dec_min = std::max(-90.0, dec - radius);
@@ -151,9 +200,9 @@ std::vector<GaiaStar> ConcurrentMultiFileCatalogV2::queryCone(double ra, double 
     if (ra_min < 0) ra_min += 360;
     if (ra_max > 360) ra_max -= 360;
     
-    // Scan all chunks (they're not sorted by position, so we must check all)
-    // This is actually fast because we only load chunks that might have matching stars
-    for (uint64_t chunk_id = 0; chunk_id < header_.total_chunks; ++chunk_id) {
+    // Only scan relevant chunks (from HEALPix index)
+    for (uint32_t chunk_id : relevant_chunks) {
+        if (chunk_id >= header_.total_chunks) continue;
         
         // Get chunk data (thread-safe with caching)
         auto chunk_data = getOrLoadChunk(chunk_id);
@@ -240,10 +289,13 @@ void ConcurrentMultiFileCatalogV2::evictLRUChunks() {
     }
 }
 
-// Copy implementations from original multifile catalog for HEALPix, etc.
+// HEALPix implementation - must match the algorithm used in rebuild_healpix_index.cpp
 uint32_t ConcurrentMultiFileCatalogV2::getHEALPixPixel(double ra, double dec) const {
     double theta = (90.0 - dec) * M_PI / 180.0;  // Colatitude
     double phi = ra * M_PI / 180.0;               // Longitude
+    // Normalize phi to [0, 2π)
+    if (phi < 0) phi += 2 * M_PI;
+    if (phi >= 2 * M_PI) phi -= 2 * M_PI;
     return ang2pix_nest(theta, phi);
 }
 
@@ -255,54 +307,66 @@ uint32_t ConcurrentMultiFileCatalogV2::ang2pix_nest(double theta, double phi) co
     const double HALFPI = M_PI / 2.0;
     
     if (za <= 2.0/3.0) {
+        // Equatorial region - use ring scheme intermediate values
         const double temp1 = nside * (0.5 + phi / TWOPI);
         const double temp2 = nside * z * 0.75;
-        const uint32_t jp = static_cast<uint32_t>(temp1 - temp2);
-        const uint32_t jm = static_cast<uint32_t>(temp1 + temp2);
-        const uint32_t ir = nside + 1 + jp - jm;
-        const uint32_t kshift = 1 - (ir & 1);
-        const uint32_t ip = (jp + jm - nside + kshift + 1) / 2;
+        const int32_t jp = static_cast<int32_t>(temp1 - temp2);
+        const int32_t jm = static_cast<int32_t>(temp1 + temp2);
+        const int32_t ir = nside + 1 + jp - jm;
+        const int32_t kshift = 1 - (ir & 1);
+        const int32_t ip = (jp + jm - nside + kshift + 1) / 2;
+        const int32_t iphi = ip % (4 * nside);
         
-        const uint32_t face_num = ((jp < nside) ? 0 : 
-                                   (jm < nside) ? 2 : 
-                                   (jp >= 2*nside) ? 4 : 
-                                   (jm >= 2*nside) ? 6 : 8) + (ir - nside);
-        
-        return face_num * nside * nside + (ip * nside + (ir - nside + 1));
+        return (ir - 1) * 4 * nside + iphi;
     }
     
     // Polar caps
-    const uint32_t ntt = static_cast<uint32_t>(phi * 4.0 / TWOPI);
-    const double tp = phi - ntt * TWOPI / 4.0;
-    const double tmp = sqrt(3.0 * (1.0 - za));
-    const uint32_t jp = static_cast<uint32_t>(nside * tp / HALFPI * tmp);
-    const uint32_t jm = static_cast<uint32_t>(nside * (1.0 - tp / HALFPI) * tmp);
-    const uint32_t ir = jp + jm + 1;
-    const uint32_t ip = ntt + 1;
+    const double tp = phi / HALFPI;
+    const double tmp = nside * sqrt(3.0 * (1.0 - za));
+    int32_t jp = static_cast<int32_t>(tp * tmp);
+    int32_t jm = static_cast<int32_t>((1.0 - tp) * tmp);
+    
+    // Clamp to valid range
+    if (jp >= static_cast<int32_t>(nside)) jp = nside - 1;
+    if (jm >= static_cast<int32_t>(nside)) jm = nside - 1;
     
     if (z > 0) {
-        return 2 * ir * (ir - 1) + ip - 1;
+        // North polar cap
+        const int32_t face = static_cast<int32_t>(phi * 2.0 / M_PI);
+        return face * nside * nside + jp * nside + jm;
     } else {
-        const uint32_t npix = 12 * nside * nside;
-        return npix - 2 * ir * (ir + 1) + ip - 1;
+        // South polar cap
+        const int32_t face = static_cast<int32_t>(phi * 2.0 / M_PI) + 8;
+        return face * nside * nside + jp * nside + jm;
     }
 }
 
 std::vector<uint32_t> ConcurrentMultiFileCatalogV2::getPixelsInCone(double ra, double dec, double radius) const {
     std::vector<uint32_t> pixels;
     
-    const double deg_per_pixel = 180.0 / (4.0 * header_.healpix_nside);  
-    const double dec_min = std::max(-90.0, dec - radius);
-    const double dec_max = std::min(90.0, dec + radius);
-    const double ra_width = radius / std::cos(dec * M_PI / 180.0);
+    // Use smaller step for small radii
+    const double pixel_size = 180.0 / (4.0 * header_.healpix_nside);  // ~0.7° for NSIDE=64
+    const double step = std::min(pixel_size / 2.0, radius / 3.0);  // Ensure we sample enough
     
-    for (double test_dec = dec_min; test_dec <= dec_max; test_dec += deg_per_pixel) {
-        for (double test_ra = ra - ra_width; test_ra <= ra + ra_width; test_ra += deg_per_pixel) {
+    const double dec_min = std::max(-90.0, dec - radius - pixel_size);
+    const double dec_max = std::min(90.0, dec + radius + pixel_size);
+    const double cos_dec = std::cos(dec * M_PI / 180.0);
+    const double ra_width = (cos_dec > 0.01) ? (radius + pixel_size) / cos_dec : 180.0;
+    
+    // Always include center pixel
+    pixels.push_back(getHEALPixPixel(ra, dec));
+    
+    // Sample the cone and surrounding area
+    for (double test_dec = dec_min; test_dec <= dec_max; test_dec += step) {
+        for (double test_ra = ra - ra_width; test_ra <= ra + ra_width; test_ra += step) {
             double norm_ra = test_ra;
             while (norm_ra < 0) norm_ra += 360;
             while (norm_ra >= 360) norm_ra -= 360;
             
-            if (angularDistance(ra, dec, norm_ra, test_dec) <= radius) {
+            // Include pixel if it might contain stars in the cone
+            // (check distance to pixel center + pixel radius)
+            double dist = angularDistance(ra, dec, norm_ra, test_dec);
+            if (dist <= radius + pixel_size) {
                 uint32_t pixel = getHEALPixPixel(norm_ra, test_dec);
                 pixels.push_back(pixel);
             }

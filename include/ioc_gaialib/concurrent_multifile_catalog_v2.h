@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <chrono>
 #include <optional>
+#include <set>
 #include "gaia_mag18_catalog_v2.h"
 
 namespace ioc {
@@ -96,7 +97,11 @@ private:
     // Core data
     std::string catalog_dir_;
     Mag18CatalogHeaderV2 header_;
-    std::vector<HEALPixIndexEntry> healpix_index_;
+    
+    // NEW HEALPix index format: maps pixel -> list of chunk IDs
+    std::vector<PixelChunkEntry> pixel_index_;
+    std::vector<uint32_t> chunk_lists_;  // Flattened array of chunk IDs
+    
     std::vector<ChunkInfo> chunk_index_;
     
     // Thread-safe cache with read-write locks
@@ -113,6 +118,7 @@ private:
     bool loadMetadata();
     std::shared_ptr<ChunkData> loadChunk(uint64_t chunk_id);
     std::shared_ptr<ChunkData> getOrLoadChunk(uint64_t chunk_id);
+    std::set<uint32_t> getChunksForCone(double ra, double dec, double radius) const;
     std::vector<uint32_t> getPixelsInCone(double ra, double dec, double radius) const;
     uint32_t getHEALPixPixel(double ra, double dec) const;
     uint32_t ang2pix_nest(double theta, double phi) const;

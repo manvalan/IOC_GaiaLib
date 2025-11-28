@@ -700,11 +700,105 @@ make
 
 | Task | Code |
 |------|------|
-| Open catalog | `Mag18CatalogV2 catalog("path.mag18v2");` |
-| Cone search | `catalog.queryCone(ra, dec, radius);` |
-| Magnitude filter | `catalog.queryConeWithMagnitude(ra, dec, r, min, max);` |
-| Brightest stars | `catalog.queryBrightest(ra, dec, r, N);` |
-| Count stars | `catalog.countInCone(ra, dec, radius);` |
+| Open catalog | `UnifiedGaiaCatalog::initialize(json_config);` |
+| Get instance | `auto& catalog = UnifiedGaiaCatalog::getInstance();` |
+| Cone search | `catalog.queryCone(params);` |
+| Corridor search | `catalog.queryCorridor(params);` |
+| Corridor from JSON | `catalog.queryCorridorJSON(json);` |
 | By source ID | `catalog.queryBySourceId(source_id);` |
-| Enable parallel | `catalog.setParallelProcessing(true, 4);` |
-| Total stars | `catalog.getTotalStars();` |
+| By name | `catalog.queryByName("Sirius");` |
+| By HD | `catalog.queryByHD("48915");` |
+| Shutdown | `UnifiedGaiaCatalog::shutdown();` |
+
+---
+
+### Example 4: Corridor Query (Occultation Path)
+
+**File: `corridor_query.cpp`**
+
+```cpp
+#include <ioc_gaialib/unified_gaia_catalog.h>
+#include <iostream>
+#include <iomanip>
+
+int main() {
+    // Initialize catalog
+    std::string home = getenv("HOME");
+    std::string config = R"({
+        "catalog_type": "multifile_v2",
+        "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+    })";
+    
+    if (!ioc::gaia::UnifiedGaiaCatalog::initialize(config)) {
+        std::cerr << "Failed to initialize catalog" << std::endl;
+        return 1;
+    }
+    
+    auto& catalog = ioc::gaia::UnifiedGaiaCatalog::getInstance();
+    
+    // Define occultation path corridor
+    ioc::gaia::CorridorQueryParams params;
+    params.path = {
+        {73.0, 20.0},   // Path start
+        {75.0, 22.0},   // Path waypoint
+        {77.0, 20.0}    // Path end
+    };
+    params.width = 0.3;           // 0.3° half-width (0.6° total)
+    params.max_magnitude = 12.0;  // Bright stars only
+    params.max_results = 500;
+    
+    std::cout << "Searching corridor: "
+              << params.getPathLength() << "° path length, "
+              << params.width * 2 << "° width\n";
+    
+    auto stars = catalog.queryCorridor(params);
+    
+    std::cout << "Found " << stars.size() << " stars\n\n";
+    std::cout << std::fixed << std::setprecision(4);
+    
+    for (size_t i = 0; i < std::min(stars.size(), size_t(10)); i++) {
+        const auto& s = stars[i];
+        std::cout << "Gaia " << s.source_id
+                  << " | RA=" << std::setw(8) << s.ra
+                  << " Dec=" << std::setw(8) << s.dec
+                  << " | Mag=" << std::setw(5) << s.phot_g_mean_mag
+                  << "\n";
+    }
+    
+    ioc::gaia::UnifiedGaiaCatalog::shutdown();
+    return 0;
+}
+```
+
+### Example 5: Corridor Query with JSON API
+
+```cpp
+#include <ioc_gaialib/unified_gaia_catalog.h>
+#include <iostream>
+
+int main() {
+    // ... initialize catalog ...
+    
+    // JSON input (e.g., from web service)
+    std::string json_request = R"({
+        "path": [
+            {"ra": 100.0, "dec": 30.0},
+            {"ra": 105.0, "dec": 32.0},
+            {"ra": 110.0, "dec": 30.0}
+        ],
+        "width": 0.5,
+        "max_magnitude": 14.0,
+        "min_parallax": 0.1,
+        "max_results": 1000
+    })";
+    
+    auto& catalog = ioc::gaia::UnifiedGaiaCatalog::getInstance();
+    auto stars = catalog.queryCorridorJSON(json_request);
+    
+    std::cout << "Found " << stars.size() << " stars in corridor\n";
+    
+    // ... process results ...
+    
+    return 0;
+}
+```

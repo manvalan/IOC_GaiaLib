@@ -160,6 +160,61 @@ for (const auto& star : stars) {
 | Designazioni Bayer | ❌ Non disponibile | ✅ 297 supportate |
 | Configurazione | Hardcoded | ✅ JSON flessibile |
 | Singleton thread-safe | ❌ | ✅ |
+| **Corridor Query** | ❌ Non disponibile | ✅ **Polyline search** |
+
+---
+
+## 🛤️ Nuova Feature: Corridor Query
+
+Trova stelle lungo un percorso definito da punti multipli. Ideale per:
+- Predizioni di occultazioni
+- Tracce di satelliti
+- Attraversamenti eclittici
+
+### Uso Base
+
+```cpp
+#include "ioc_gaialib/unified_gaia_catalog.h"
+
+// Definisci un corridoio lungo il percorso di occultazione
+ioc::gaia::CorridorQueryParams params;
+params.path = {
+    {73.0, 20.0},   // Punto iniziale (RA, Dec in gradi)
+    {75.0, 22.0},   // Punto intermedio
+    {77.0, 20.0}    // Punto finale
+};
+params.width = 0.5;           // Semi-larghezza in gradi
+params.max_magnitude = 14.0;  // Magnitudine massima
+params.max_results = 1000;    // Limite risultati
+
+auto& catalog = UnifiedGaiaCatalog::getInstance();
+auto stars = catalog.queryCorridor(params);
+```
+
+### Uso con JSON
+
+```cpp
+std::string json = R"({
+    "path": [
+        {"ra": 73.0, "dec": 20.0},
+        {"ra": 75.0, "dec": 22.0}
+    ],
+    "width": 0.5,
+    "max_magnitude": 14.0,
+    "min_parallax": 0.0,
+    "max_results": 1000
+})";
+
+auto stars = catalog.queryCorridorJSON(json);
+```
+
+### Performance
+
+| Lunghezza Percorso | Larghezza | Tempo | Note |
+|-------------------|-----------|-------|------|
+| 2° | 0.2° | ~40 ms | Percorso semplice |
+| 5° | 0.5° | ~100 ms | Corridoio medio |
+| L-shaped | 0.15° | ~40 ms | Percorso multi-segmento |
 
 ---
 
@@ -179,7 +234,8 @@ for (const auto& star : stars) {
 ```json
 {
     "catalog_type": "compressed_v2",
-    "catalog_path": "~/.catalog/gaia_mag18_v2.mag18v2",
+    "catalog_path": "~/.catalog/gaia_mag18_v2.mag18
+    v2",
     "enable_iau_names": true
 }
 ```

@@ -71,7 +71,7 @@ struct Mag18RecordV2 {
 static_assert(sizeof(Mag18RecordV2) == 84, "Mag18RecordV2 must be exactly 84 bytes");
 
 /**
- * @brief HEALPix index entry - one per pixel (20 bytes with 4-byte alignment)
+ * @brief HEALPix index entry - OLD format (deprecated, kept for compatibility)
  */
 #pragma pack(push, 4)
 struct HEALPixIndexEntry {
@@ -84,6 +84,20 @@ struct HEALPixIndexEntry {
 
 // Static assertion for HEALPixIndexEntry size
 static_assert(sizeof(HEALPixIndexEntry) == 20, "HEALPixIndexEntry must be exactly 20 bytes");
+
+/**
+ * @brief NEW HEALPix index entry - maps pixel to chunks (16 bytes)
+ * This format is more efficient as stars are stored sorted by source_id, not by pixel
+ */
+#pragma pack(push, 4)
+struct PixelChunkEntry {
+    uint32_t pixel_id;           // HEALPix pixel number (NSIDE=64, NESTED)
+    uint32_t num_chunks;         // Number of chunks containing stars in this pixel
+    uint64_t chunk_list_offset;  // Offset into chunk list array (in elements, not bytes)
+};
+#pragma pack(pop)
+
+static_assert(sizeof(PixelChunkEntry) == 16, "PixelChunkEntry must be exactly 16 bytes");
 
 /**
  * @brief Chunk compression info - one per chunk (40 bytes)

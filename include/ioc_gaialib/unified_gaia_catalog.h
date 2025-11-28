@@ -227,6 +227,48 @@ public:
     std::optional<GaiaStar> queryByName(const std::string& common_name) const;
     
     /**
+     * @brief Query stars along a corridor/path
+     * 
+     * Searches for stars within a specified width along a path defined by
+     * multiple waypoints. The corridor is formed by connecting the waypoints
+     * with great circle arcs and including all stars within 'width' degrees
+     * of the path.
+     * 
+     * @param params Corridor query parameters including path points and width
+     * @return Vector of found stars
+     * 
+     * Example JSON input:
+     * {
+     *   "path": [
+     *     {"ra": 0.0, "dec": 0.0},
+     *     {"ra": 10.0, "dec": 5.0},
+     *     {"ra": 20.0, "dec": 10.0}
+     *   ],
+     *   "width": 0.5,
+     *   "max_magnitude": 16.0
+     * }
+     */
+    std::vector<GaiaStar> queryCorridor(const CorridorQueryParams& params) const;
+    
+    /**
+     * @brief Query stars along a corridor using JSON configuration
+     * @param json_config JSON string with corridor parameters
+     * @return Vector of found stars
+     */
+    std::vector<GaiaStar> queryCorridorJSON(const std::string& json_config) const;
+    
+    /**
+     * @brief Asynchronous corridor query
+     * @param params Corridor query parameters
+     * @param progress_callback Optional progress callback
+     * @return Future containing results
+     */
+    std::future<std::vector<GaiaStar>> queryCorridorAsync(
+        const CorridorQueryParams& params,
+        ProgressCallback progress_callback = nullptr
+    ) const;
+    
+    /**
      * @brief Get performance statistics
      */
     CatalogStats getStatistics() const;
