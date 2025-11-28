@@ -1,6 +1,6 @@
 #include "ioc_gaialib/unified_gaia_catalog.h"
 #include "ioc_gaialib/concurrent_multifile_catalog_v2.h"
-#include "ioc_gaialib/gaia_mag18_catalog_v2.h"
+#include "ioc_gaialib/gaia_mag18_catalog.h"
 #include "ioc_gaialib/gaia_client.h"
 #include "ioc_gaialib/common_star_names.h"
 #include "ioc_gaialib/iau_star_catalog_parser.h"
@@ -85,7 +85,7 @@ public:
     
     // Catalog implementations
     std::unique_ptr<ConcurrentMultiFileCatalogV2> multifile_catalog_;
-    std::unique_ptr<Mag18CatalogV2> compressed_catalog_;
+    std::unique_ptr<ioc_gaialib::GaiaMag18Catalog> compressed_catalog_;
     std::unique_ptr<GaiaClient> online_client_;
     
     // Star names cross-match system
@@ -120,8 +120,8 @@ public:
     
     bool initializeCompressed(const std::string& file_path) {
         try {
-            compressed_catalog_ = std::make_unique<Mag18CatalogV2>();
-            return compressed_catalog_->open(file_path);
+            compressed_catalog_ = std::make_unique<ioc_gaialib::GaiaMag18Catalog>(file_path);
+            return compressed_catalog_->isLoaded();
         } catch (const std::exception& e) {
             std::cerr << "Failed to initialize compressed catalog: " << e.what() << std::endl;
             return false;

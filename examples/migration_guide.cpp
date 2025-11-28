@@ -115,23 +115,20 @@ void configuration_examples() {
     cout << "📁 Multi-file V2 (Best Performance):\n";
     cout << R"({
     "catalog_type": "multifile_v2",
-    "multifile_directory": "/Users/user/.catalog/gaia_mag18_v2_multifile",
-    "max_cached_chunks": 100,
-    "log_level": "info"
+    "multifile_directory": "~/.catalog/gaia_mag18_v2_multifile",
+    "max_cached_chunks": 100
 })" << "\n\n";
 
     cout << "💾 Compressed V2:\n";
     cout << R"({
     "catalog_type": "compressed_v2",
-    "compressed_file_path": "/Users/user/.catalog/gaia_mag18_v2.mag18v2",
-    "log_level": "info"
+    "compressed_file_path": "~/.catalog/gaia_mag18_v2.mag18v2"
 })" << "\n\n";
 
     cout << "🌐 Online ESA:\n";
     cout << R"({
     "catalog_type": "online_esa",
-    "timeout_seconds": 30,
-    "log_level": "warning"
+    "timeout_seconds": 30
 })" << "\n\n";
 
     cout << "🔧 Advanced Configuration:\n";

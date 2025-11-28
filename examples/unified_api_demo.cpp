@@ -14,9 +14,8 @@ void createExampleConfigs() {
     // Configuration for multifile V2 catalog (recommended for performance)
     string multifile_config = R"({
         "catalog_type": "multifile_v2",
-        "multifile_directory": "/Users/michelebigi/.catalog/gaia_mag18_v2_multifile",
-        "max_cached_chunks": "100",
-        "log_level": "info"
+        "multifile_directory": ")" + string(getenv("HOME")) + R"(/.catalog/gaia_mag18_v2_multifile",
+        "max_cached_chunks": 100
     })";
     
     ofstream multifile_file("config_multifile.json");
@@ -26,8 +25,7 @@ void createExampleConfigs() {
     // Configuration for compressed V2 catalog
     string compressed_config = R"({
         "catalog_type": "compressed_v2", 
-        "compressed_file_path": "/Users/michelebigi/.catalog/gaia_mag18_v2.mag18v2",
-        "log_level": "info"
+        "compressed_file_path": ")" + string(getenv("HOME")) + R"(/.catalog/gaia_mag18_v2.mag18v2"
     })";
     
     ofstream compressed_file("config_compressed.json");
@@ -37,8 +35,7 @@ void createExampleConfigs() {
     // Configuration for online ESA catalog
     string online_config = R"({
         "catalog_type": "online_esa",
-        "timeout_seconds": "30",
-        "log_level": "info"
+        "timeout_seconds": 30
     })";
     
     ofstream online_file("config_online.json");

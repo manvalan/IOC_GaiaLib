@@ -144,50 +144,64 @@ void benchmarkLocalCatalogs() {
     
     PerformanceBenchmark benchmark;
     
-    // Test compressed catalog if available
-    std::string catalog_path = "~/.catalog/gaia_mag18_v2.mag18v2";
+    // Test multifile catalog FIRST (priority - faster)
+    std::string multifile_path = std::string(getenv("HOME")) + "/.catalog/gaia_mag18_v2_multifile/";
+    std::ifstream test_multifile(multifile_path + "metadata.dat");
+    
+    if (test_multifile.good()) {
+        std::cout << "� Testing multifile catalog: " << multifile_path << std::endl;
+        
+        MultiFileCatalogV2 multifile_catalog(multifile_path);
+        
+        // Comprehensive multifile tests
+        benchmark.measureTime("Multifile small cone search (0.1°)", [&]() {
+            multifile_catalog.queryCone(83.8221, 22.0145, 0.1, 100); // Near Aldebaran
+        }, 10);
+        
+        benchmark.measureTime("Multifile medium cone search (1.0°)", [&]() {
+            multifile_catalog.queryCone(83.8221, 22.0145, 1.0, 1000);
+        }, 5);
+        
+        benchmark.measureTime("Multifile large cone search (5.0°)", [&]() {
+            multifile_catalog.queryCone(83.8221, 22.0145, 5.0, 5000);
+        }, 3);
+        
+        // Test different sky regions
+        benchmark.measureTime("Multifile Orion region (1.0°)", [&]() {
+            multifile_catalog.queryCone(83.8221, 22.0145, 1.0, 1000); // Aldebaran
+        }, 3);
+        
+        benchmark.measureTime("Multifile Vega region (1.0°)", [&]() {
+            multifile_catalog.queryCone(279.234, 38.784, 1.0, 1000); // Near Vega
+        }, 3);
+        
+    } else {
+        std::cout << "⚠️  Multifile catalog not found at: " << multifile_path << std::endl;
+    }
+
+    // Test compressed catalog as fallback
+    std::string catalog_path = std::string(getenv("HOME")) + "/.catalog/gaia_mag18_v2.mag18v2";
     std::ifstream test_file(catalog_path);
     
     if (test_file.good()) {
-        std::cout << "🗂️  Testing compressed catalog: " << catalog_path << std::endl;
+        std::cout << "�️  Testing compressed catalog: " << catalog_path << std::endl;
         
         Mag18CatalogV2 catalog;
         benchmark.measureTime("Compressed catalog opening", [&]() {
             catalog.open(catalog_path);
         });
         
-        // Test cone searches
-        benchmark.measureTime("Small cone search (0.1°)", [&]() {
-            catalog.queryCone(83.8221, 22.0145, 0.1, 1000); // Near Aldebaran
-        }, 10);
+        // Test cone searches (reduced iterations to avoid timeout)
+        benchmark.measureTime("Compressed small cone search (0.1°)", [&]() {
+            catalog.queryCone(83.8221, 22.0145, 0.1, 100); 
+        }, 3); // Reduced from 10 to 3
         
-        benchmark.measureTime("Medium cone search (1.0°)", [&]() {
-            catalog.queryCone(83.8221, 22.0145, 1.0, 10000);
-        }, 5);
-        
-        benchmark.measureTime("Large cone search (5.0°)", [&]() {
-            catalog.queryCone(83.8221, 22.0145, 5.0, 50000);
-        }, 3);
+        benchmark.measureTime("Compressed medium cone search (1.0°)", [&]() {
+            catalog.queryCone(83.8221, 22.0145, 1.0, 1000);
+        }, 2); // Reduced from 5 to 2
         
     } else {
         std::cout << "⚠️  Compressed catalog not found at: " << catalog_path << std::endl;
-    }
-    
-    // Test multifile catalog if available
-    std::string multifile_path = "~/.catalog/multifile_v2/";
-    std::ifstream test_multifile(multifile_path);
-    
-    if (test_multifile.good()) {
-        std::cout << "📁 Testing multifile catalog: " << multifile_path << std::endl;
-        
-        MultiFileCatalogV2 multifile_catalog(multifile_path);
-        
-        benchmark.measureTime("Multifile cone search (1.0°)", [&]() {
-            multifile_catalog.queryCone(83.8221, 22.0145, 1.0, 10000);
-        }, 5);
-        
-    } else {
-        std::cout << "⚠️  Multifile catalog not found at: " << multifile_path << std::endl;
     }
 }
 
