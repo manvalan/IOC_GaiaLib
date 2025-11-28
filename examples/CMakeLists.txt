@@ -1,154 +1,17 @@
 cmake_minimum_required(VERSION 3.15)
 
-# Example programs
-add_executable(simple_test simple_test.cpp)
-target_link_libraries(simple_test PRIVATE ioc_gaialib)
-
-add_executable(integration_test integration_test.cpp)
-target_link_libraries(integration_test PRIVATE ioc_gaialib)
-
-add_executable(real_data_test real_data_test.cpp)
-target_link_libraries(real_data_test PRIVATE ioc_gaialib)
-
-add_executable(compile_catalog compile_catalog.cpp)
-target_link_libraries(compile_catalog PRIVATE ioc_gaialib)
-
-add_executable(test_catalog_query test_catalog_query.cpp)
-target_link_libraries(test_catalog_query PRIVATE ioc_gaialib)
-
-add_executable(quick_catalog_test quick_catalog_test.cpp)
-target_link_libraries(quick_catalog_test PRIVATE ioc_gaialib)
-
-add_executable(test_mag17 test_mag17.cpp)
-target_link_libraries(test_mag17 PRIVATE ioc_gaialib)
-
-add_executable(test_grappa test_grappa.cpp)
-target_link_libraries(test_grappa PRIVATE ioc_gaialib)
-
-add_executable(test_local_catalog test_local_catalog.cpp)
-target_link_libraries(test_local_catalog PRIVATE ioc_gaialib)
-
-add_executable(simple_local_test simple_local_test.cpp)
-target_link_libraries(simple_local_test PRIVATE ioc_gaialib)
-
-add_executable(comprehensive_local_test comprehensive_local_test.cpp)
-target_link_libraries(comprehensive_local_test PRIVATE ioc_gaialib)
-
-add_executable(build_mag18_catalog build_mag18_catalog.cpp)
-target_link_libraries(build_mag18_catalog PRIVATE ioc_gaialib)
-
-add_executable(test_mag18_catalog test_mag18_catalog.cpp)
-target_link_libraries(test_mag18_catalog PRIVATE ioc_gaialib)
-
-add_executable(test_unified_catalog test_unified_catalog.cpp)
-target_link_libraries(test_unified_catalog PRIVATE ioc_gaialib)
-
-add_executable(analyze_mag18 analyze_mag18.cpp)
-target_link_libraries(analyze_mag18 PRIVATE ioc_gaialib)
-
-add_executable(build_mag18_catalog_v2 build_mag18_catalog_v2.cpp)
-target_link_libraries(build_mag18_catalog_v2 PRIVATE ioc_gaialib)
-
-add_executable(test_grappa_load test_grappa_load.cpp)
-target_link_libraries(test_grappa_load PRIVATE ioc_gaialib)
-
-add_executable(test_mag18_catalog_v2 test_mag18_catalog_v2.cpp)
-target_link_libraries(test_mag18_catalog_v2 PRIVATE ioc_gaialib)
-
-add_executable(test_mag18_parallel test_mag18_parallel.cpp)
-target_link_libraries(test_mag18_parallel PRIVATE ioc_gaialib)
-
-add_executable(test_openmp_quick test_openmp_quick.cpp)
-target_link_libraries(test_openmp_quick PRIVATE ioc_gaialib)
-
-add_executable(use_v1_catalog use_v1_catalog.cpp)
-target_link_libraries(use_v1_catalog PRIVATE ioc_gaialib)
-
-add_executable(validate_v2_interface validate_v2_interface.cpp)
-target_link_libraries(validate_v2_interface PRIVATE ioc_gaialib)
-
-add_executable(quick_v2_test quick_v2_test.cpp)
-target_link_libraries(quick_v2_test PRIVATE ioc_gaialib)
-
-add_executable(test_v2_minimal test_v2_minimal.cpp)
-target_link_libraries(test_v2_minimal PRIVATE ioc_gaialib)
-
-add_executable(test_v2_io test_v2_io.cpp)
-target_link_libraries(test_v2_io PRIVATE ioc_gaialib)
-
-add_executable(profile_v2_load profile_v2_load.cpp)
-target_link_libraries(profile_v2_load PRIVATE ioc_gaialib)
-
-add_executable(test_v2_lazyload test_v2_lazyload.cpp)
-target_link_libraries(test_v2_lazyload PRIVATE ioc_gaialib)
-
-add_executable(simple_v2_test simple_v2_test.cpp)
-target_link_libraries(simple_v2_test PRIVATE ioc_gaialib)
-
-add_executable(test_v2_complete test_v2_complete.cpp)
-target_link_libraries(test_v2_complete PRIVATE ioc_gaialib)
-
-add_executable(decompress_v2_catalog decompress_v2_catalog.cpp)
-target_link_libraries(decompress_v2_catalog PRIVATE ioc_gaialib)
-
-add_executable(test_uncompressed_v2 test_uncompressed_v2.cpp)
-target_link_libraries(test_uncompressed_v2 PRIVATE ioc_gaialib)
-
-add_executable(timing_test_compressed timing_test_compressed.cpp)
-target_link_libraries(timing_test_compressed PRIVATE ioc_gaialib)
-
-add_executable(test_v2_interface_complete test_v2_interface_complete.cpp)
-target_link_libraries(test_v2_interface_complete PRIVATE ioc_gaialib)
-
-add_executable(test_cache_performance test_cache_performance.cpp)
-target_link_libraries(test_cache_performance PRIVATE ioc_gaialib)
-
-add_executable(create_multifile_v2 create_multifile_v2.cpp)
-target_link_libraries(create_multifile_v2 PRIVATE ioc_gaialib)
-
-add_executable(create_smart_multifile_v2 create_smart_multifile_v2.cpp)
-target_link_libraries(create_smart_multifile_v2 PRIVATE ioc_gaialib)
-
-add_executable(test_multifile_performance test_multifile_performance.cpp)
-target_link_libraries(test_multifile_performance PRIVATE ioc_gaialib)
-
-add_executable(debug_multifile debug_multifile.cpp)
-target_link_libraries(debug_multifile PRIVATE ioc_gaialib)
-
-add_executable(raw_chunk_test raw_chunk_test.cpp)
-target_link_libraries(raw_chunk_test PRIVATE ioc_gaialib)
-
-add_executable(targeted_search_test targeted_search_test.cpp)
-target_link_libraries(targeted_search_test PRIVATE ioc_gaialib)
-
-add_executable(final_validation final_validation.cpp)
-target_link_libraries(final_validation PRIVATE ioc_gaialib)
-
-add_executable(concurrency_test concurrency_test.cpp)
-target_link_libraries(concurrency_test PRIVATE ioc_gaialib)
-find_package(Threads REQUIRED)
-target_link_libraries(concurrency_test PRIVATE Threads::Threads)
-
-add_executable(concurrent_comparison concurrent_comparison.cpp)
-target_link_libraries(concurrent_comparison PRIVATE ioc_gaialib)
-target_link_libraries(concurrent_comparison PRIVATE Threads::Threads)
+# Example programs - using the unified API only
 
 add_executable(unified_api_demo unified_api_demo.cpp)
 target_link_libraries(unified_api_demo PRIVATE ioc_gaialib)
 
-add_executable(migration_guide migration_guide.cpp)
-target_link_libraries(migration_guide PRIVATE ioc_gaialib)
+add_executable(iau_integration_test iau_integration_test.cpp)
+target_link_libraries(iau_integration_test PRIVATE ioc_gaialib)
 
-add_executable(cross_match_demo cross_match_demo.cpp)
-target_link_libraries(cross_match_demo PRIVATE ioc_gaialib)
-
-add_executable(deprecation_test deprecation_test.cpp)
-target_link_libraries(deprecation_test PRIVATE ioc_gaialib)
-
-add_executable(test_crossmatch test_crossmatch.cpp)
-target_link_libraries(test_crossmatch PRIVATE ioc_gaialib)
+add_executable(integration_test integration_test.cpp)
+target_link_libraries(integration_test PRIVATE ioc_gaialib)
 
 # Install examples
-install(TARGETS simple_test integration_test real_data_test compile_catalog test_catalog_query quick_catalog_test test_mag17 test_grappa test_local_catalog
+install(TARGETS unified_api_demo iau_integration_test integration_test
     RUNTIME DESTINATION bin
 )

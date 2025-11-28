@@ -44,15 +44,10 @@ set(GAIALIB_SOURCES
     src/types.cpp
     src/gaia_cache.cpp
     src/gaia_client.cpp
-    src/catalog_compiler.cpp
-    src/grappa_reader.cpp
-    src/gaia_local_catalog.cpp
     src/gaia_mag18_catalog.cpp
     src/gaia_mag18_catalog_v2.cpp
-    src/multifile_catalog_v2.cpp
     src/concurrent_multifile_catalog_v2.cpp
     src/unified_gaia_catalog.cpp
-    src/gaia_catalog.cpp
     src/common_star_names.cpp
     src/iau_star_catalog_parser.cpp
 )
@@ -141,18 +136,3 @@ install(EXPORT IOC_GaiaLibTargets
     NAMESPACE IOC_GaiaLib::
     DESTINATION lib/cmake/IOC_GaiaLib
 )
-
-# Add comprehensive test suite
-add_executable(comprehensive_test_suite examples/comprehensive_test_suite.cpp)
-target_include_directories(comprehensive_test_suite PRIVATE include)
-target_link_libraries(comprehensive_test_suite ioc_gaialib ${CURL_LIBRARIES})
-
-# Add IAU integration test
-add_executable(iau_integration_test examples/iau_integration_test.cpp)
-target_include_directories(iau_integration_test PRIVATE include)
-target_link_libraries(iau_integration_test ioc_gaialib ${CURL_LIBRARIES})
-
-# Add complete performance benchmark
-add_executable(complete_performance_benchmark examples/complete_performance_benchmark.cpp)
-target_include_directories(complete_performance_benchmark PRIVATE include)
-target_link_libraries(complete_performance_benchmark ioc_gaialib ${CURL_LIBRARIES})
