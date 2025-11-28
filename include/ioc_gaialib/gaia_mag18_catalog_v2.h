@@ -31,12 +31,11 @@ namespace gaia {
  * File size: ~14 GB (vs 9 GB in V1, +55% for extended data)
  */
 
-#pragma pack(push, 1)
-
 /**
  * @brief Extended record format with proper motion and quality parameters
- * Total: 80 bytes per star
+ * Total: 84 bytes per star (with 4-byte alignment)
  */
+#pragma pack(push, 4)
 struct Mag18RecordV2 {
     uint64_t source_id;        // 8 bytes - Gaia DR3 source_id
     double ra;                 // 8 bytes - Right Ascension (degrees)
@@ -63,22 +62,31 @@ struct Mag18RecordV2 {
     uint16_t phot_bp_n_obs;   // 2 bytes - Number of BP observations
     uint16_t phot_rp_n_obs;   // 2 bytes - Number of RP observations
     
-    // HEALPix pixel (4 bytes) - precomputed for faster spatial queries
+    // HEALPix pixel (4 bytes)
     uint32_t healpix_pixel;   // NSIDE=64, NESTED scheme
 };
+#pragma pack(pop)
+
+// Static assertion to verify correct structure size
+static_assert(sizeof(Mag18RecordV2) == 84, "Mag18RecordV2 must be exactly 84 bytes");
 
 /**
- * @brief HEALPix index entry - one per pixel
+ * @brief HEALPix index entry - one per pixel (20 bytes with 4-byte alignment)
  */
+#pragma pack(push, 4)
 struct HEALPixIndexEntry {
     uint32_t pixel_id;        // HEALPix pixel number (NSIDE=64, NESTED)
     uint64_t first_star_idx;  // Index of first star in this pixel
     uint32_t num_stars;       // Number of stars in this pixel
     uint32_t reserved;        // Reserved for future use
 };
+#pragma pack(pop)
+
+// Static assertion for HEALPixIndexEntry size
+static_assert(sizeof(HEALPixIndexEntry) == 20, "HEALPixIndexEntry must be exactly 20 bytes");
 
 /**
- * @brief Chunk compression info - one per chunk
+ * @brief Chunk compression info - one per chunk (40 bytes)
  */
 struct ChunkInfo {
     uint64_t chunk_id;              // Chunk number (0-based)
@@ -92,8 +100,9 @@ struct ChunkInfo {
 
 /**
  * @brief Catalog header with spatial index
- * Total: 256 bytes (expanded from 64 in V1 for index metadata)
+ * Total: 268 bytes (with 4-byte alignment)
  */
+#pragma pack(push, 4)
 struct Mag18CatalogHeaderV2 {
     char magic[8];                  // "GAIA18V2"
     uint32_t version;               // Version number (2)
@@ -108,7 +117,7 @@ struct Mag18CatalogHeaderV2 {
     double ra_min, ra_max;          // RA bounds
     double dec_min, dec_max;        // Dec bounds
     
-    uint64_t header_size;           // Size of this header (256)
+    uint64_t header_size;           // Size of this header (268)
     uint64_t healpix_index_offset;  // Offset to HEALPix index
     uint64_t healpix_index_size;    // Size of HEALPix index (bytes)
     uint32_t num_healpix_pixels;    // Number of pixels with data
@@ -123,8 +132,10 @@ struct Mag18CatalogHeaderV2 {
     char source_catalog[32];        // Source catalog name (GRAPPA3E)
     char reserved[64];              // Reserved for future use
 };
-
 #pragma pack(pop)
+
+// Static assertion for header size
+static_assert(sizeof(Mag18CatalogHeaderV2) == 268, "Mag18CatalogHeaderV2 must be exactly 268 bytes");
 
 /**
  * @brief Gaia Mag18 Catalog V2 Reader with spatial indexing
