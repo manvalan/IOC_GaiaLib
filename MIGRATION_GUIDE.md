@@ -6,13 +6,15 @@
 
 ---
 
-## 📍 Cataloghi Disponibili e Performance
+## 📍 Catalogo e Performance
 
-| Tipo | Percorso | Performance | Uso Raccomandato |
-|------|----------|-------------|------------------|
-| **Multifile V2** | `~/.catalog/gaia_mag18_v2_multifile/` | ⭐ **0.001ms - 18ms** | ✅ **DEFAULT** |
-| Compressed V2 | `~/.catalog/gaia_mag18_v2.mag18v2` | 500ms | Solo se spazio disco limitato |
-| Online ESA | - | 6-18 secondi | Solo per test |
+**Catalogo Multifile V2** - Unico formato supportato
+
+| Percorso | Performance | Caratteristiche |
+|----------|-------------|-----------------|
+| `~/.catalog/gaia_mag18_v2_multifile/` | ⭐ **0.001ms - 18ms** | 231M stelle, indice HEALPix, 19 GB |
+
+> **Nota:** La libreria gestisce automaticamente il formato del catalogo. Specifica solo il path.
 
 ---
 
@@ -40,10 +42,7 @@ int main() {
     // Configurazione JSON con path dinamico
     std::string home = std::getenv("HOME");
     std::string config = R"({
-        "catalog_type": "multifile_v2",
-        "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile",
-        "enable_iau_names": true,
-        "cache_size_mb": 512
+        "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
     })";
 
     // Inizializzazione (una volta sola)
@@ -89,13 +88,14 @@ int main() {
 
 ---
 
-### 📁 Tipi di Catalogo Supportati
+### 📁 Formato Catalogo
 
-| catalog_type | Descrizione | Performance |
-|--------------|-------------|-------------|
-| `multifile_v2` | Directory con file HEALPix | ⭐ **0.001-18ms** |
-| `compressed_v2` | File singolo compresso | 500ms |
-| `online_esa` | Query ESA in tempo reale | 6-18s |
+La libreria usa il formato **multifile V2** - una directory con file chunk HEALPix ottimizzati:
+
+- **Performance**: 0.001-18ms per query
+- **Dimensione**: 19 GB
+- **Stelle**: 231 milioni (mag ≤ 18)
+- **Indice**: HEALPix NSIDE=64 per ricerca spaziale veloce
 
 ---
 
@@ -121,9 +121,7 @@ if (!catalog.open("/path/file.mag18v2")) {
 // Dopo (RACCOMANDATO)
 std::string home = std::getenv("HOME");
 std::string config = R"({
-    "catalog_type": "multifile_v2", 
-    "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile",
-    "enable_iau_names": true
+    "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
 })";
 
 if (!UnifiedGaiaCatalog::initialize(config)) {
@@ -218,44 +216,31 @@ auto stars = catalog.queryCorridorJSON(json);
 
 ---
 
-### 🔧 Configurazioni JSON Esempio
+### 🔧 Configurazione JSON
 
-#### Multifile V2 (⭐ RACCOMANDATO)
 ```json
 {
-    "catalog_type": "multifile_v2", 
-    "catalog_path": "~/.catalog/gaia_mag18_v2_multifile",
-    "enable_iau_names": true,
-    "cache_size_mb": 512
+    "catalog_path": "~/.catalog/gaia_mag18_v2_multifile"
 }
 ```
 
-#### Compressed V2 (alternativa)
-```json
-{
-    "catalog_type": "compressed_v2",
-    "catalog_path": "~/.catalog/gaia_mag18_v2.mag18
-    v2",
-    "enable_iau_names": true
-}
-```
+Oppure con path dinamico in C++:
 
-#### Online ESA (solo per test)
-```json
-{
-    "catalog_type": "online_esa",
-    "timeout_seconds": 30
-}
+```cpp
+std::string home = std::getenv("HOME");
+std::string config = R"({
+    "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+})";
 ```
 
 ---
 
 ### ❗ Note Importanti
 
-1. **Usa sempre Multifile V2**: È 35-500x più veloce del catalogo compresso
-2. **Path dinamici**: Usa `getenv("HOME")` invece di path hardcoded
-3. **enable_iau_names**: Attiva i nomi ufficiali IAU per queryByName()
-4. **Backward compatibility**: Le API V2 funzionano ancora ma sono deprecate
+1. **Path dinamici**: Usa `getenv("HOME")` invece di path hardcoded
+2. **Interfaccia trasparente**: La libreria gestisce automaticamente il formato del catalogo
+3. **Singleton pattern**: Inizializza una volta con `initialize()`, poi usa `getInstance()`
+4. **Nomi IAU**: 451 stelle ufficiali supportate nativamente
 
 ---
 
@@ -278,15 +263,16 @@ std::string path = home + "/.catalog/gaia_mag18_v2_multifile";
 
 **queryByName() restituisce nullptr**
 ```cpp
-// ✅ Soluzione: Assicurati che enable_iau_names sia true
-"enable_iau_names": true
+// ✅ Soluzione: Verifica che il nome sia corretto e sia tra i 451 nomi IAU supportati
+auto star = catalog.queryByName("Sirius");  // ✅
+auto star = catalog.queryByName("sirius");  // ❌ case-sensitive
 ```
 
 **Performance lente**
 ```cpp
-// ✅ Soluzione: Usa multifile_v2 invece di compressed_v2
-"catalog_type": "multifile_v2"  // ⭐ 0.001-18ms
-// NON: "catalog_type": "compressed_v2"  // 500ms
+// ✅ Soluzione: Verifica che il path del catalogo sia corretto
+"catalog_path": "/Users/user/.catalog/gaia_mag18_v2_multifile"  // ✅
+// Verifica che metadata.dat e chunks/ esistano
 ```
 
 ---

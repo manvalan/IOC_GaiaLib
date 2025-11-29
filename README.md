@@ -38,8 +38,7 @@ int main() {
     // Initialize catalog
     std::string home = getenv("HOME");
     ioc::gaia::UnifiedGaiaCatalog::initialize(R"({
-        "catalog_type": "multifile_v2",
-        "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+        "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
     })");
     
     auto& catalog = ioc::gaia::UnifiedGaiaCatalog::getInstance();
@@ -90,7 +89,7 @@ int main() {
 
 ## 📁 Catalog Data
 
-The library requires a local copy of the Gaia catalog:
+The library uses a local multifile catalog:
 
 ```
 ~/.catalog/gaia_mag18_v2_multifile/
@@ -102,6 +101,8 @@ The library requires a local copy of the Gaia catalog:
 ```
 
 **Total:** 231 million stars (mag ≤ 18), 19 GB
+
+> **Note:** The library automatically manages the catalog format. You just need to specify the path.
 
 ---
 
@@ -192,15 +193,11 @@ struct CorridorQueryParams {
 
 ```json
 {
-    "catalog_type": "multifile_v2",
-    "multifile_directory": "/path/to/catalog"
+    "catalog_path": "~/.catalog/gaia_mag18_v2_multifile"
 }
 ```
 
-Supported types:
-- `multifile_v2` - Local multifile catalog (recommended)
-- `compressed_v2` - Single compressed file
-- `online_esa` - ESA Gaia Archive online
+The library automatically detects the catalog format. Just provide the path.
 
 ---
 
