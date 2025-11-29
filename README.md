@@ -38,7 +38,8 @@ int main() {
     // Initialize catalog
     std::string home = getenv("HOME");
     ioc::gaia::UnifiedGaiaCatalog::initialize(R"({
-        "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+        "catalog_type": "multifile_v2",
+        "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
     })");
     
     auto& catalog = ioc::gaia::UnifiedGaiaCatalog::getInstance();
@@ -193,11 +194,14 @@ struct CorridorQueryParams {
 
 ```json
 {
-    "catalog_path": "~/.catalog/gaia_mag18_v2_multifile"
+    "catalog_type": "multifile_v2",
+    "multifile_directory": "~/.catalog/gaia_mag18_v2_multifile"
 }
 ```
 
-The library automatically detects the catalog format. Just provide the path.
+**Required parameters:**
+- `catalog_type`: Must be `"multifile_v2"`
+- `multifile_directory`: Path to the catalog directory
 
 ---
 

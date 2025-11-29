@@ -22,13 +22,13 @@ using namespace ioc::gaia;
 
 ```cpp
 int main() {
-    // Path al catalogo (rilevamento automatico del formato)
+    // Path al catalogo
     std::string home = getenv("HOME");
-    std::string catalog_path = home + "/.catalog/gaia_mag18_v2_multifile";
     
     // Configurazione JSON
     std::string config = R"({
-        "catalog_path": ")" + catalog_path + R"("
+        "catalog_type": "multifile_v2",
+        "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
     })";
     
     // Inizializza (una sola volta)
@@ -364,15 +364,21 @@ Il catalogo deve trovarsi in:
 
 ```json
 {
-    "catalog_path": "~/.catalog/gaia_mag18_v2_multifile"
+    "catalog_type": "multifile_v2",
+    "multifile_directory": "~/.catalog/gaia_mag18_v2_multifile"
 }
 ```
+
+**Required parameters:**
+- `catalog_type`: Must be `"multifile_v2"`
+- `multifile_directory`: Path to catalog directory
 
 **Path dinamico in C++:**
 ```cpp
 std::string home = getenv("HOME");
 std::string config = R"({
-    "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+    "catalog_type": "multifile_v2",
+    "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
 })";
 ```
 
@@ -455,7 +461,8 @@ int main() {
     // Inizializza
     std::string home = getenv("HOME");
     std::string config = R"({
-        "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+        "catalog_type": "multifile_v2",
+        "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
     })";
     
     if (!UnifiedGaiaCatalog::initialize(config)) {
@@ -500,7 +507,8 @@ int main() {
     // Inizializza catalogo
     std::string home = getenv("HOME");
     std::string config = R"({
-        "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+        "catalog_type": "multifile_v2",
+        "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
     })";
     
     UnifiedGaiaCatalog::initialize(config);
@@ -541,7 +549,8 @@ int main() {
     // Inizializza
     std::string home = getenv("HOME");
     std::string config = R"({
-        "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+        "catalog_type": "multifile_v2",
+        "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
     })";
     
     UnifiedGaiaCatalog::initialize(config);

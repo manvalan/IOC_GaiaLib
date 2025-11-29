@@ -42,7 +42,8 @@ int main() {
     // Configurazione JSON con path dinamico
     std::string home = std::getenv("HOME");
     std::string config = R"({
-        "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+        "catalog_type": "multifile_v2",
+        "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
     })";
 
     // Inizializzazione (una volta sola)
@@ -121,7 +122,8 @@ if (!catalog.open("/path/file.mag18v2")) {
 // Dopo (RACCOMANDATO)
 std::string home = std::getenv("HOME");
 std::string config = R"({
-    "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+    "catalog_type": "multifile_v2",
+    "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
 })";
 
 if (!UnifiedGaiaCatalog::initialize(config)) {
@@ -220,7 +222,8 @@ auto stars = catalog.queryCorridorJSON(json);
 
 ```json
 {
-    "catalog_path": "~/.catalog/gaia_mag18_v2_multifile"
+    "catalog_type": "multifile_v2",
+    "multifile_directory": "~/.catalog/gaia_mag18_v2_multifile"
 }
 ```
 
@@ -229,7 +232,8 @@ Oppure con path dinamico in C++:
 ```cpp
 std::string home = std::getenv("HOME");
 std::string config = R"({
-    "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+    "catalog_type": "multifile_v2",
+    "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
 })";
 ```
 
@@ -271,7 +275,8 @@ auto star = catalog.queryByName("sirius");  // ❌ case-sensitive
 **Performance lente**
 ```cpp
 // ✅ Soluzione: Verifica che il path del catalogo sia corretto
-"catalog_path": "/Users/user/.catalog/gaia_mag18_v2_multifile"  // ✅
+"catalog_type": "multifile_v2",
+"multifile_directory": "/Users/user/.catalog/gaia_mag18_v2_multifile"
 // Verifica che metadata.dat e chunks/ esistano
 ```
 

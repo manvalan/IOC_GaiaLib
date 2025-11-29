@@ -119,7 +119,8 @@ int main() {
     // Initialize
     std::string home = getenv("HOME");
     std::string config = R"({
-        "catalog_path": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
+        "catalog_type": "multifile_v2",
+        "multifile_directory": ")" + home + R"(/.catalog/gaia_mag18_v2_multifile"
     })";
     
     UnifiedGaiaCatalog::initialize(config);
