@@ -272,7 +272,7 @@ std::vector<uint32_t> Mag18CatalogV2::getPixelsInCone(double ra, double dec,
     double phi = ra * DEG2RAD;
     
     std::vector<uint32_t> pixels;
-    query_disc(theta, phi, radius, pixels);
+    query_disc(theta, phi, radius * DEG2RAD, pixels);  // BUG FIX: Convert radius to radians
     
     return pixels;
 }
