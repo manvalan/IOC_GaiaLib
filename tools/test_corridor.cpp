@@ -5,7 +5,7 @@
 #include <iostream>
 #include <iomanip>
 #include <chrono>
-#include "include/ioc_gaialib/unified_gaia_catalog.h"
+#include <ioc_gaialib/unified_gaia_catalog.h>
 
 int main() {
     std::cout << "=== Corridor Query API Test ===" << std::endl;
