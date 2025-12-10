@@ -177,6 +177,47 @@ void testUnifiedAPI(const string& config_file) {
     }
     cout << "\n";
     
+    // Test 5: Orbit Search
+    cout << "☄️ Test 5: Orbit Search\n";
+    cout << "──────────────────────\n";
+    
+    OrbitQueryParams orbit_params;
+    orbit_params.t_start = 2460000.0;
+    orbit_params.t_end = 2460000.1;
+    orbit_params.width = 0.5;
+    orbit_params.max_magnitude = 15.0;
+    
+    // Create a simple linear motion polynomial (simulating an object moving from 0,0 to 1,1)
+    ChebyshevPolynomial poly;
+    poly.t_start = 2460000.0;
+    poly.t_end = 2460000.1;
+    
+    // RA = 10 * (t - t0) => linear growth from 0 to 1
+    // In Chebyshev over [-1, 1], linear function ax + b is:
+    // f(u) = c0 * T0 + c1 * T1
+    // We want RA to go from 0 to 1 over the interval.
+    // At t_start (u=-1), RA=0. At t_end (u=1), RA=1.
+    // 0 = c0 - c1
+    // 1 = c0 + c1
+    // => 2c0 = 1 => c0 = 0.5
+    // => 2c1 = 1 => c1 = 0.5
+    poly.coeffs_ra = {0.5, 0.5}; 
+    poly.coeffs_dec = {0.5, 0.5}; // Same for Dec
+    
+    orbit_params.polynomials.push_back(poly);
+    
+    start_time = chrono::high_resolution_clock::now();
+    try {
+        auto orbit_stars = catalog.queryOrbit(orbit_params);
+        end_time = chrono::high_resolution_clock::now();
+        duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time);
+        
+        cout << "Orbit query (0.0 to 1.0 RA/Dec) completed in " << duration.count() << " ms\n";
+        cout << "Found: " << orbit_stars.size() << " stars along the orbit\n\n";
+    } catch (const exception& e) {
+        cerr << "Orbit query failed: " << e.what() << "\n\n";
+    }
+    
     // Display statistics
     cout << "📈 Performance Statistics:\n";
     cout << "─────────────────────────\n";

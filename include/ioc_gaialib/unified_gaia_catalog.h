@@ -269,6 +269,18 @@ public:
     ) const;
     
     /**
+     * @brief Query stars along an orbit interpolated by Chebyshev polynomials
+     * 
+     * This method discretizes the orbit defined by Chebyshev polynomials over the
+     * specified time interval and searches for stars within 'width' degrees of
+     * the path.
+     * 
+     * @param params Orbit query parameters including polynomials, time range, and width
+     * @return Vector of found stars
+     */
+    std::vector<GaiaStar> queryOrbit(const OrbitQueryParams& params) const;
+    
+    /**
      * @brief Get performance statistics
      */
     CatalogStats getStatistics() const;

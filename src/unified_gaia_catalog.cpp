@@ -698,6 +698,134 @@ std::vector<GaiaStar> UnifiedGaiaCatalog::queryCorridor(const CorridorQueryParam
     return results;
 }
 
+
+
+namespace {
+    double evaluateChebyshev(double t, double t_start, double t_end, const std::vector<double>& coeffs) {
+        if (coeffs.empty()) return 0.0;
+        
+        // Normalize time to [-1, 1]
+        // Handle singularity if t_start == t_end
+        if (std::abs(t_end - t_start) < 1e-9) return coeffs[0];
+
+        double u = 2.0 * (t - t_start) / (t_end - t_start) - 1.0;
+        
+        // Clamping to handle potential floating point epsilon issues at boundaries
+        if (u < -1.0) u = -1.0;
+        if (u > 1.0) u = 1.0;
+        
+        double T_prev = 1.0;
+        double T_curr = u;
+        
+        double result = coeffs[0] * T_prev;
+        if (coeffs.size() > 1) {
+            result += coeffs[1] * T_curr;
+        }
+        
+        for (size_t k = 2; k < coeffs.size(); ++k) {
+            double T_next = 2.0 * u * T_curr - T_prev;
+            result += coeffs[k] * T_next;
+            T_prev = T_curr;
+            T_curr = T_next;
+        }
+        
+        return result;
+    }
+}
+
+std::vector<GaiaStar> UnifiedGaiaCatalog::queryOrbit(const OrbitQueryParams& params) const {
+    if (!params.isValid()) {
+        throw std::runtime_error("Invalid orbit query parameters");
+    }
+
+    // Convert orbit to corridor path
+    CorridorQueryParams corridor_params;
+    corridor_params.width = params.width;
+    corridor_params.max_magnitude = params.max_magnitude;
+    corridor_params.min_parallax = -1.0; // Default
+    corridor_params.max_results = 0; // Default
+
+    double step = params.step_size;
+    if (step <= 0) {
+        // Default sampling: 100 points across the interval
+        step = (params.t_end - params.t_start) / 100.0;
+        if (step <= 0) step = 1.0; // Should not happen given isValid check
+    }
+
+    // Sort polynomials by start time to optimize search (optional but good)
+    // We make a copy to sort
+    std::vector<ChebyshevPolynomial> sorted_polys = params.polynomials;
+    std::sort(sorted_polys.begin(), sorted_polys.end(), 
+        [](const ChebyshevPolynomial& a, const ChebyshevPolynomial& b) {
+            return a.t_start < b.t_start;
+        });
+
+    for (double t = params.t_start; t <= params.t_end; t += step) {
+        // Find valid polynomial
+        const ChebyshevPolynomial* active_poly = nullptr;
+        for (const auto& poly : sorted_polys) {
+            if (t >= poly.t_start && t <= poly.t_end) {
+                active_poly = &poly;
+                break;
+            }
+            // Optimization: if we passed the time, stop (since sorted)
+            if (poly.t_start > t) break; 
+        }
+
+        if (active_poly) {
+            // Evaluate RA/Dec
+            double ra = evaluateChebyshev(t, active_poly->t_start, active_poly->t_end, active_poly->coeffs_ra);
+            double dec = evaluateChebyshev(t, active_poly->t_start, active_poly->t_end, active_poly->coeffs_dec);
+            
+            corridor_params.path.emplace_back(ra, dec);
+        }
+    }
+    
+    // Ensure we process the exact end time if loop missed it
+    if (std::abs(params.t_end - params.t_start) > 1e-9) { // If not a point query
+         double t = params.t_end;
+         const ChebyshevPolynomial* active_poly = nullptr;
+         for (const auto& poly : sorted_polys) {
+             if (t >= poly.t_start && t <= poly.t_end) {
+                 active_poly = &poly;
+                 break;
+             }
+         }
+         
+         if (active_poly) {
+             double ra = evaluateChebyshev(t, active_poly->t_start, active_poly->t_end, active_poly->coeffs_ra);
+             double dec = evaluateChebyshev(t, active_poly->t_start, active_poly->t_end, active_poly->coeffs_dec);
+             
+             // Avoid duplicate if step landed exactly on end
+             if (corridor_params.path.empty() || 
+                 std::abs(corridor_params.path.back().ra - ra) > 1e-6 || 
+                 std::abs(corridor_params.path.back().dec - dec) > 1e-6) {
+                 corridor_params.path.emplace_back(ra, dec);
+             }
+         }
+    }
+
+    if (corridor_params.path.size() < 2) {
+         // Need at least 2 points for a corridor.
+         // If path has 1 point, treat as a cone search?
+         // queryCorridor might handle 1 point if modified, but let's check.
+         // Effectively, if we have 1 point, it's a cone search at that point.
+         if (corridor_params.path.size() == 1) {
+             QueryParams cone_params;
+             cone_params.ra_center = corridor_params.path[0].ra;
+             cone_params.dec_center = corridor_params.path[0].dec;
+             cone_params.radius = params.width;
+             cone_params.max_magnitude = params.max_magnitude;
+             return queryCone(cone_params);
+         }
+         
+         // If 0 points, return empty
+         return {};
+    }
+
+    return queryCorridor(corridor_params);
+}
+
 std::vector<GaiaStar> UnifiedGaiaCatalog::queryCorridorJSON(const std::string& json_config) const {
     CorridorQueryParams params = CorridorQueryParams::fromJSON(json_config);
     return queryCorridor(params);

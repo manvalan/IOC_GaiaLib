@@ -186,6 +186,39 @@ struct CorridorQueryParams {
 };
 
 /**
+ * Chebyshev Polynomial coefficients for orbit interpolation
+ * Represents an orbit segment in RA/Dec over a specific time range
+ */
+struct ChebyshevPolynomial {
+    double t_start;             ///< Start time of validity (JD or arbitrary units matching query range)
+    double t_end;               ///< End time of validity
+    std::vector<double> coeffs_ra;  ///< Chebyshev coefficients for Right Ascension
+    std::vector<double> coeffs_dec; ///< Chebyshev coefficients for Declination
+    
+    ChebyshevPolynomial() : t_start(0), t_end(0) {}
+};
+
+/**
+ * Parameters for orbit query
+ * Searches for stars along an orbit interpolated by Chebyshev polynomials
+ */
+struct OrbitQueryParams {
+    double t_start;                 ///< Query start time
+    double t_end;                   ///< Query end time
+    std::vector<ChebyshevPolynomial> polynomials; ///< List of polynomials covering the interval
+    double width;                   ///< Search width (radius) around the orbit [degrees]
+    double max_magnitude;           ///< Maximum G magnitude
+    double step_size;               ///< Step size for discretizing the orbit [same units as time] (0 = auto)
+    
+    OrbitQueryParams() 
+        : t_start(0), t_end(0), width(0.1), max_magnitude(20.0), step_size(0) {}
+        
+    bool isValid() const {
+        return t_end > t_start && !polynomials.empty() && width > 0;
+    }
+};
+
+/**
  * Cache statistics
  */
 struct CacheStats {
