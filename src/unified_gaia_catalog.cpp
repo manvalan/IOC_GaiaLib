@@ -628,21 +628,92 @@ std::vector<GaiaStar> UnifiedGaiaCatalog::queryCorridor(const CorridorQueryParam
     std::vector<GaiaStar> results;
     std::set<uint64_t> seen_source_ids;  // Avoid duplicates
     
-    // Query a cone around each waypoint and each segment midpoint
-    // This ensures we cover the entire corridor
+    // Optimized strategy: Adaptive Cone Covering
+    // Instead of querying every point, we generate a minimal set of query cones
+    // that covers the entire corridor tube.
+    
+    struct SearchCone {
+        double ra;
+        double dec;
+        double radius;
+    };
+    std::vector<SearchCone> search_cones;
+    
+    // Heuristic: Use a query radius that is at least a reasonable chunk size (e.g. 0.5 deg)
+    // but scales with width. A larger radius means fewer queries but more filtering.
+    // 0.5 degrees is generally efficient for file-based partial reads.
+    double chunk_radius = std::max(params.width * 2.0, 0.5);
+    
+    // Start first cone
+    if (!params.path.empty()) {
+        search_cones.push_back({params.path[0].ra, params.path[0].dec, chunk_radius});
+    }
+    
+    // Iterate through points and add cones when we step out of current coverage
+    // We also check segment midpoints for long segments
     for (size_t i = 0; i < params.path.size(); ++i) {
+        // Check current point
+        SearchCone& current_cone = search_cones.back();
+        double dist = angularDistance({params.path[i].ra, params.path[i].dec}, 
+                                      {current_cone.ra, current_cone.dec});
+        
+        // If the tube section at this point sticks out of the cone, start a new one
+        // Tube sticks out if: center_dist + width > cone_radius
+        if (dist + params.width > current_cone.radius) {
+            search_cones.push_back({params.path[i].ra, params.path[i].dec, chunk_radius});
+        }
+        
+        // Handle long segments between i and i+1
+        if (i + 1 < params.path.size()) {
+            double seg_len = angularDistance(
+                {params.path[i].ra, params.path[i].dec},
+                {params.path[i+1].ra, params.path[i+1].dec}
+            );
+            
+            // If segment is long, walk along it
+            if (seg_len > chunk_radius) {
+                int steps = static_cast<int>(seg_len / (chunk_radius * 0.5)); // 50% overlap approx
+                for (int k = 1; k < steps; ++k) {
+                    double t = static_cast<double>(k) / steps;
+                    double mid_ra = params.path[i].ra + t * (params.path[i+1].ra - params.path[i].ra);
+                    double mid_dec = params.path[i].dec + t * (params.path[i+1].dec - params.path[i].dec);
+                    
+                    SearchCone& active = search_cones.back();
+                    double mid_dist = angularDistance({mid_ra, mid_dec}, {active.ra, active.dec});
+                    
+                    if (mid_dist + params.width > active.radius) {
+                        search_cones.push_back({mid_ra, mid_dec, chunk_radius});
+                    }
+                }
+            }
+        }
+    }
+    
+    // Execute batched queries
+    // We collect ALL candidates first, then filter.
+    // This allows using the batchQuery API if available, or just loop.
+    std::cout << "Optimized Corridor: " << params.path.size() << " points -> " 
+              << search_cones.size() << " query cones." << std::endl;
+              
+    for (const auto& cone : search_cones) {
         QueryParams cone_params;
-        cone_params.ra_center = params.path[i].ra;
-        cone_params.dec_center = params.path[i].dec;
-        cone_params.radius = params.width * 2;  // Search wider to catch all stars
+        cone_params.ra_center = cone.ra;
+        cone_params.dec_center = cone.dec;
+        cone_params.radius = cone.radius;
         cone_params.max_magnitude = params.max_magnitude;
         cone_params.min_parallax = params.min_parallax;
         
+        // Perform query
+        // Note: In a real high-perf scenario, we would use batchQuery/async here
         auto cone_results = pimpl_->performQuery(cone_params);
         
-        // Filter by actual distance to corridor
+        // Accumulate and Filter
         for (const auto& star : cone_results) {
             if (seen_source_ids.count(star.source_id) > 0) continue;
+            
+            // Precise geometric check
+            // Only calculate expensive distance if star is roughly close
+            // (performQuery already did a coarse check via cone radius)
             
             double dist = pointToPolylineDistance(star.ra, star.dec, params.path);
             if (dist <= params.width) {
@@ -650,46 +721,7 @@ std::vector<GaiaStar> UnifiedGaiaCatalog::queryCorridor(const CorridorQueryParam
                 results.push_back(star);
                 
                 if (params.max_results > 0 && results.size() >= params.max_results) {
-                    return results;
-                }
-            }
-        }
-    }
-    
-    // Also query along segment midpoints for longer segments
-    for (size_t i = 0; i + 1 < params.path.size(); ++i) {
-        double segment_length = std::sqrt(
-            std::pow(params.path[i+1].ra - params.path[i].ra, 2) +
-            std::pow(params.path[i+1].dec - params.path[i].dec, 2)
-        );
-        
-        // Add intermediate points for segments longer than width
-        int num_points = static_cast<int>(segment_length / params.width) + 1;
-        for (int j = 1; j < num_points; ++j) {
-            double t = static_cast<double>(j) / num_points;
-            double mid_ra = params.path[i].ra + t * (params.path[i+1].ra - params.path[i].ra);
-            double mid_dec = params.path[i].dec + t * (params.path[i+1].dec - params.path[i].dec);
-            
-            QueryParams cone_params;
-            cone_params.ra_center = mid_ra;
-            cone_params.dec_center = mid_dec;
-            cone_params.radius = params.width * 2;
-            cone_params.max_magnitude = params.max_magnitude;
-            cone_params.min_parallax = params.min_parallax;
-            
-            auto cone_results = pimpl_->performQuery(cone_params);
-            
-            for (const auto& star : cone_results) {
-                if (seen_source_ids.count(star.source_id) > 0) continue;
-                
-                double dist = pointToPolylineDistance(star.ra, star.dec, params.path);
-                if (dist <= params.width) {
-                    seen_source_ids.insert(star.source_id);
-                    results.push_back(star);
-                    
-                    if (params.max_results > 0 && results.size() >= params.max_results) {
-                        return results;
-                    }
+                     return results;
                 }
             }
         }
