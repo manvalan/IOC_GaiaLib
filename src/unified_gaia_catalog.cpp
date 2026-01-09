@@ -1,6 +1,7 @@
 #include "ioc_gaialib/unified_gaia_catalog.h"
 #include "ioc_gaialib/concurrent_multifile_catalog_v2.h"
 #include "ioc_gaialib/gaia_mag18_catalog.h"
+#include "ioc_gaialib/gaia_mag18_catalog_v2.h"
 #include "ioc_gaialib/gaia_client.h"
 #include "ioc_gaialib/common_star_names.h"
 #include "ioc_gaialib/iau_star_catalog_parser.h"
@@ -89,6 +90,7 @@ public:
     // Catalog implementations
     std::unique_ptr<ConcurrentMultiFileCatalogV2> multifile_catalog_;
     std::unique_ptr<ioc_gaialib::GaiaMag18Catalog> compressed_catalog_;
+    std::unique_ptr<ioc::gaia::Mag18CatalogV2> compressed_catalog_v2_;
     std::unique_ptr<GaiaClient> online_client_;
     
     // Star names cross-match system
@@ -123,8 +125,22 @@ public:
     
     bool initializeCompressed(const std::string& file_path) {
         try {
+            // Try to open as V2 first
+            auto cat_v2 = std::make_unique<ioc::gaia::Mag18CatalogV2>(file_path);
+            if (cat_v2->getTotalStars() > 0) { // Simple check if loaded successfully
+                 compressed_catalog_v2_ = std::move(cat_v2);
+                 std::cout << "Loaded Gaia Compressed V2 catalog: " << file_path << std::endl;
+                 return true;
+            }
+            
+            // Fallback to V1
             compressed_catalog_ = std::make_unique<ioc_gaialib::GaiaMag18Catalog>(file_path);
-            return compressed_catalog_->isLoaded();
+            if (compressed_catalog_->isLoaded()) {
+                std::cout << "Loaded Gaia Compressed V1 catalog (no proper motions)" << std::endl;
+                return true;
+            }
+            
+            return false;
         } catch (const std::exception& e) {
             std::cerr << "Failed to initialize compressed catalog: " << e.what() << std::endl;
             return false;
@@ -158,7 +174,23 @@ public:
                     break;
                     
                 case GaiaCatalogConfig::CatalogType::COMPRESSED_V2:
-                    if (compressed_catalog_) {
+                    if (compressed_catalog_v2_) {
+                         results = compressed_catalog_v2_->queryCone(
+                            params.ra_center, params.dec_center, params.radius,
+                             // Map limiting magnitude if set (primitive optimization)
+                            0 
+                        );
+                        // Apply magnitude filter manually if needed, or V2 might support it
+                        if (params.max_magnitude < 21.0) {
+                             results.erase(
+                                std::remove_if(results.begin(), results.end(),
+                                    [&](const GaiaStar& star) {
+                                        return star.phot_g_mean_mag > params.max_magnitude;
+                                    }),
+                                results.end()
+                            );
+                        }
+                    } else if (compressed_catalog_) {
                         results = compressed_catalog_->queryCone(
                             params.ra_center, params.dec_center, params.radius
                         );
@@ -246,7 +278,9 @@ public:
                 break;
                 
             case GaiaCatalogConfig::CatalogType::COMPRESSED_V2:
-                if (compressed_catalog_) {
+                if (compressed_catalog_v2_) {
+                    return compressed_catalog_v2_->queryBySourceId(source_id);
+                } else if (compressed_catalog_) {
                     return compressed_catalog_->queryBySourceId(source_id);
                 }
                 break;

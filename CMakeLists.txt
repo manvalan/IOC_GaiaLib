@@ -133,6 +133,5 @@ install(FILES
 # Install targets
 install(EXPORT IOC_GaiaLibTargets
     FILE IOC_GaiaLibTargets.cmake
-    NAMESPACE IOC_GaiaLib::
     DESTINATION lib/cmake/IOC_GaiaLib
 )
