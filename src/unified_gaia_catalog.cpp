@@ -5,6 +5,7 @@
 #include "ioc_gaialib/gaia_client.h"
 #include "ioc_gaialib/common_star_names.h"
 #include "ioc_gaialib/iau_star_catalog_parser.h"
+#include "ioc_gaialib/gaia_sqlite_catalog.h"
 #include <iostream>
 #include <sstream>
 #include <thread>
@@ -91,6 +92,7 @@ public:
     std::unique_ptr<ConcurrentMultiFileCatalogV2> multifile_catalog_;
     std::unique_ptr<ioc_gaialib::GaiaMag18Catalog> compressed_catalog_;
     std::unique_ptr<ioc::gaia::Mag18CatalogV2> compressed_catalog_v2_;
+    std::unique_ptr<GaiaSqliteCatalog> sqlite_catalog_;
     std::unique_ptr<GaiaClient> online_client_;
     
     // Star names cross-match system
@@ -143,6 +145,20 @@ public:
             return false;
         } catch (const std::exception& e) {
             std::cerr << "Failed to initialize compressed catalog: " << e.what() << std::endl;
+            return false;
+        }
+    }
+    
+    bool initializeSqlite(const std::string& db_path) {
+        try {
+            sqlite_catalog_ = std::make_unique<GaiaSqliteCatalog>(db_path);
+            if (sqlite_catalog_->isOpen()) {
+                std::cout << "Loaded Gaia SQLite DR3 catalog: " << db_path << std::endl;
+                return true;
+            }
+            return false;
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to initialize SQLite catalog: " << e.what() << std::endl;
             return false;
         }
     }
@@ -206,6 +222,15 @@ public:
                     }
                     break;
                     
+                case GaiaCatalogConfig::CatalogType::SQLITE_DR3:
+                    if (sqlite_catalog_) {
+                        results = sqlite_catalog_->queryCone(
+                            params.ra_center, params.dec_center, params.radius,
+                            params.max_magnitude
+                        );
+                    }
+                    break;
+
                 case GaiaCatalogConfig::CatalogType::ONLINE_VIZIER:
                     // TODO: Implement VizieR support
                     throw std::runtime_error("VizieR support not yet implemented");
@@ -252,17 +277,23 @@ public:
     }
     
     std::optional<GaiaStar> queryBySourceId(uint64_t source_id) {
-        auto result = performSourceIdQuery(source_id);
+        std::optional<GaiaStar> result;
+        if (config_.catalog_type == GaiaCatalogConfig::CatalogType::SQLITE_DR3 && sqlite_catalog_) {
+            result = sqlite_catalog_->queryBySourceId(source_id);
+        } else {
+            result = performSourceIdQuery(source_id);
+        }
+
         if (result.has_value()) {
-            // Add cross-match information if available
-            if (star_names_loaded_) {
+            // Fallback to internal star names if the catalog didn't provide them
+            if (star_names_loaded_ && result->common_name.empty()) {
                 auto cross_match = star_names_.getCrossMatch(source_id);
                 if (cross_match.has_value()) {
-                    result->sao_designation = cross_match->sao_designation;
-                    result->hd_designation = cross_match->hd_designation;
-                    result->hip_designation = cross_match->hip_designation;
-                    result->tycho2_designation = cross_match->tycho2_designation;
-                    result->common_name = cross_match->common_name;
+                    if (result->sao_designation.empty()) result->sao_designation = cross_match->sao_designation;
+                    if (result->hd_designation.empty()) result->hd_designation = cross_match->hd_designation;
+                    if (result->hip_designation.empty()) result->hip_designation = cross_match->hip_designation;
+                    if (result->tycho2_designation.empty()) result->tycho2_designation = cross_match->tycho2_designation;
+                    if (result->common_name.empty()) result->common_name = cross_match->common_name;
                 }
             }
         }
@@ -289,6 +320,12 @@ public:
                 // Online queries by source ID would need special implementation
                 break;
                 
+            case GaiaCatalogConfig::CatalogType::SQLITE_DR3:
+                if (sqlite_catalog_) {
+                    return sqlite_catalog_->queryBySourceId(source_id);
+                }
+                break;
+
             case GaiaCatalogConfig::CatalogType::ONLINE_VIZIER:
                 break;
         }
@@ -296,6 +333,12 @@ public:
     }
     
     std::optional<GaiaStar> queryByCatalogDesignation(const std::string& catalog_type, const std::string& designation) {
+        if (config_.catalog_type == GaiaCatalogConfig::CatalogType::SQLITE_DR3 && sqlite_catalog_) {
+            auto result = sqlite_catalog_->queryByDesignation(catalog_type, designation);
+            if (result) return result;
+            // Fallback to internal CSN if not found in SQLite
+        }
+
         if (!star_names_loaded_) {
             return std::nullopt;
         }
@@ -402,6 +445,14 @@ bool UnifiedGaiaCatalog::initialize(const std::string& json_config) {
                 return false;
             }
             
+        } else if (catalog_type_str == "sqlite_dr3") {
+            impl.config_.catalog_type = GaiaCatalogConfig::CatalogType::SQLITE_DR3;
+            impl.config_.sqlite_file_path = config_map["sqlite_file_path"];
+            
+            if (!impl.initializeSqlite(impl.config_.sqlite_file_path)) {
+                return false;
+            }
+
         } else {
             std::cerr << "Unknown catalog type: " << catalog_type_str << std::endl;
             return false;
@@ -463,6 +514,16 @@ CatalogInfo UnifiedGaiaCatalog::getCatalogInfo() const {
             info.is_online = true;
             break;
             
+        case GaiaCatalogConfig::CatalogType::SQLITE_DR3:
+            info.catalog_name = "Gaia DR3 SQLite (Occult Pro)";
+            info.version = "DR3";
+            info.magnitude_limit = 21.0;
+            info.is_online = false;
+            if (pimpl_->sqlite_catalog_) {
+                info.total_stars = pimpl_->sqlite_catalog_->getTotalStars();
+            }
+            break;
+
         case GaiaCatalogConfig::CatalogType::ONLINE_VIZIER:
             info.catalog_name = "VizieR Gaia DR3";
             info.version = "DR3";
@@ -948,6 +1009,10 @@ void UnifiedGaiaCatalog::clearCache() {
             if (pimpl_->multifile_catalog_) {
                 pimpl_->multifile_catalog_->clearCache();
             }
+            break;
+        case GaiaCatalogConfig::CatalogType::SQLITE_DR3:
+            // SQLite handles its own caching via the OS and its internal page cache.
+            // In a more complex scenario, we might call sqlite3_db_release_memory().
             break;
         // Other catalog types would implement clearCache differently
         case GaiaCatalogConfig::CatalogType::COMPRESSED_V2:

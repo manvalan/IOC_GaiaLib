@@ -16,6 +16,7 @@ find_package(CURL REQUIRED)
 find_package(LibXml2 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 # Find OpenMP (special handling for macOS with Homebrew libomp)
 if(APPLE)
@@ -50,6 +51,7 @@ set(GAIALIB_SOURCES
     src/unified_gaia_catalog.cpp
     src/common_star_names.cpp
     src/iau_star_catalog_parser.cpp
+    src/gaia_sqlite_catalog.cpp
 )
 
 # Create library
@@ -63,6 +65,7 @@ target_include_directories(ioc_gaialib
         ${CURL_INCLUDE_DIRS}
         ${LIBXML2_INCLUDE_DIR}
         ${ZLIB_INCLUDE_DIRS}
+        ${SQLite3_INCLUDE_DIRS}
 )
 
 target_link_libraries(ioc_gaialib
@@ -72,6 +75,7 @@ target_link_libraries(ioc_gaialib
         Threads::Threads
         ZLIB::ZLIB
         OpenMP::OpenMP_CXX
+        ${SQLite3_LIBRARIES}
 )
 
 # Compiler warnings

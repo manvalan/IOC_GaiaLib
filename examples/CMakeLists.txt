@@ -11,7 +11,10 @@ target_link_libraries(iau_integration_test PRIVATE ioc_gaialib)
 add_executable(integration_test integration_test.cpp)
 target_link_libraries(integration_test PRIVATE ioc_gaialib)
 
+add_executable(test_multifile_corridor test_multifile_corridor.cpp)
+target_link_libraries(test_multifile_corridor PRIVATE ioc_gaialib)
+
 # Install examples
-install(TARGETS unified_api_demo iau_integration_test integration_test
+install(TARGETS unified_api_demo iau_integration_test integration_test test_multifile_corridor
     RUNTIME DESTINATION bin
 )

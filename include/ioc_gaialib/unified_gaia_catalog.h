@@ -24,8 +24,9 @@ struct GaiaStar;
  */
 struct GaiaCatalogConfig {
     enum class CatalogType {
-        MULTIFILE_V2,      // Local multi-file V2 catalog (default)
-        COMPRESSED_V2,     // Local compressed V2 catalog  
+        MULTIFILE_V2,      // Local multi-file V2 catalog
+        COMPRESSED_V2,     // Local compressed V2 catalog
+        SQLITE_DR3,        // SQLite with R*Tree and cross-references (recommended)
         ONLINE_ESA,        // ESA Gaia Archive online
         ONLINE_VIZIER      // VizieR online service
     };
@@ -41,7 +42,10 @@ struct GaiaCatalogConfig {
     CacheStrategy cache_strategy = CacheStrategy::HYBRID;
     
     // Local catalog paths
-    std::string multifile_directory;      // Required for MULTIFILE_V2
+        std::string multifile_directory;
+        // Path to the SQLite database file
+        std::string sqlite_file_path;
+      // Required for MULTIFILE_V2
     std::string compressed_file_path;     // Required for COMPRESSED_V2
     
     // Online configuration
